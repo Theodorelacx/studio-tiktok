@@ -5,6 +5,9 @@ import cv2
 import numpy as np
 import streamlit as st
 from PIL import Image
+import urllib.request
+import urllib.parse
+import xml.etree.ElementTree as ET
 
 # Import sécurisé de MoviePy pour compatibilité PC / Cloud
 try:
@@ -112,30 +115,36 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction pour récupérer les accès directs aux tendances YouTube par catégorie
-def recuperer_tendances_youtube():
-    return {
-        "🔥 Tendances Générales": {
-            "url": "https://www.youtube.com/feed/trending", 
-            "desc": "Les vidéos les plus populaires du moment en France."
-        },
-        "📱 YouTube Shorts Viraux": {
-            "url": "https://www.youtube.com/hashtag/shorts", 
-            "desc": "Le flux officiel des Shorts les plus vus et partagés."
-        },
-        "😂 Humour & Divertissement": {
-            "url": "https://www.youtube.com/results?search_query=shorts+humour+viral&sp=CAMSAhAB", 
-            "desc": "Le top des vidéos courtes de divertissement et memes."
-        },
-        "🎮 Gaming": {
-            "url": "https://www.youtube.com/gaming", 
-            "desc": "Les tendances, extraits et lives jeux vidéo du moment."
-        },
-        "🎵 Musique": {
-            "url": "https://www.youtube.com/feed/explore?bp=Cg8KCC9tLzAybGNuMRIICgIYAw%3D%3D", 
-            "desc": "Les clips et hits musicaux tendances."
-        }
-    }
+# Fonction sécurisée pour récupérer des vidéos via flux publics ciblés
+def recuperer_galerie_youtube(requete):
+    try:
+        query_encoded = urllib.parse.quote(requete)
+        url = f"https://www.youtube.com/feeds/videos.xml?search_query={query_encoded}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            xml_data = response.read()
+
+        root = ET.fromstring(xml_data)
+        ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
+
+        videos = []
+        for entry in root.findall('atom:entry', ns):
+            title_node = entry.find('atom:title', ns)
+            link_node = entry.find('atom:link', ns)
+            id_node = entry.find('yt:videoId', ns)
+            author_node = entry.find('atom:author/atom:name', ns)
+            
+            if title_node is not None and link_node is not None and id_node is not None:
+                video_id = id_node.text
+                videos.append({
+                    'title': title_node.text,
+                    'link': link_node.attrib.get('href', f"https://www.youtube.com/watch?v={video_id}"),
+                    'author': author_node.text if author_node is not None else "YouTube Creator",
+                    'thumbnail': f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+                })
+        return videos
+    except Exception:
+        return []
 
 # =========================================================================
 # NAVIGATION PRINCIPALE (MENU DE L'APPLICATION)
@@ -407,24 +416,39 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : TENDANCES YOUTUBE
+# SECTION 2 : TENDANCES YOUTUBE (GALERIE VISIBLE)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Veille & Tendances YouTube")
-    st.write("Accède en un clic aux pages officielles des tendances et formats viraux du moment.")
+    st.title("🔥 Radar à Idées & Galerie YouTube")
+    st.write("Sélectionne une thématique ciblée pour afficher instantanément les miniatures et titres récents directement dans l'application.")
 
-    categories = recuperer_tendances_youtube()
-    choix_cat = st.selectbox("Choisis une thématique d'inspiration :", list(categories.keys()))
+    # Catégories intelligentes basées sur ta stratégie (Talks, Interviews, Débats, Anecdotes)
+    categories_dict = {
+        "🎙️ Interviews & Récits (Style Philippe Boxo / Légiste)": "interview histoire vraie affaire légiste",
+        "💬 Débats & Société (Style Alex Hitchens / Mascu / Clivant)": "débat société opinion clash",
+        "🛋️ Talk & Streaming assis (Style Squeezie / McFly / Mastu)": "podcast talk show interview",
+        "🔥 Shorts & Formats Viraux Récents": "shorts viral clash interview"
+    }
 
-    infos = categories[choix_cat]
-    st.info(f"📌 {infos['desc']}")
+    choix_cat = st.selectbox("Choisis ton vivier de recherche :", list(categories_dict.keys()))
+    requete_reelle = categories_dict[choix_cat]
 
-    st.link_button("🚀 Ouvrir sur YouTube", infos["url"], type="primary")
+    with st.spinner("Recherche des meilleures pépites en cours..."):
+        resultats_videos = recuperer_galerie_youtube(requete_reelle)
 
-    st.markdown("---")
-    st.subheader("💡 Guide rapide de veille créative :")
-    st.markdown("""
-    - **Accroche (0-3 sec)** : Observe ce qui retient l'attention sur les premiers Shorts de la liste.
-    - **Cadrage & Rythme** : Repère le niveau de zoom et la vitesse de coupe.
-    - **Montage** : Utilise ensuite l'onglet **🎬 Montage Vidéo** pour préparer tes versions prêtes à publier !
-    """)
+    if resultats_videos:
+        st.success(f"{len(resultats_videos)} vidéos trouvées pour alimenter ton inspiration !")
+        
+        # Affichage en grille de cartes visuelles (2 colonnes)
+        cols = st.columns(2)
+        for idx, vid in enumerate(resultats_videos):
+            col = cols[idx % 2]
+            with col:
+                st.image(vid['thumbnail'], use_column_width=True)
+                st.markdown(f"**{vid['title']}**")
+                st.caption(f"📺 {vid['author']}")
+                st.link_button("▶️ Voir la vidéo", vid['link'], key=f"btn_vid_{idx}")
+                st.markdown("---")
+    else:
+        st.info("💡 Aucun résultat direct instantané avec ce mot-clé. Utilise le bouton ci-dessous pour ouvrir les tendances globales.")
+        st.link_button("🌐 Ouvrir YouTube Tendances", "https://www.youtube.com/feed/trending", type="primary")
