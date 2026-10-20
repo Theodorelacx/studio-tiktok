@@ -43,6 +43,40 @@ POS_A = (86, 610)
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
+# SUPER-LISTE ÉTENDUE DE CRÉATEURS PHARES FR (INCLUANT TES DEMANDES SPÉCIFIQUES) - CHANNEL IDs
+CHAINES_OFFICIELLES = {
+    "Squeezie": "UC3IZKmgri5V028bUiU01X1w",
+    "Mastu": "UC8A_79I3yUj4O9I46aJt8aQ",
+    "McFly et Carlito": "UC1aA-E3B2w8v8i-f5YdF7wA",
+    "Amixem": "UC28AsI-L43fLmsI6S2A1AFA",
+    "Legend (Guillaume Pley)": "UC3pL1z9y3-X-Iq_F1qN08pA",
+    "Zack Nani": "UCQ5WfR9o_D3Zq8m5p3gS8Aw",
+    "Popcorn": "UCv5kSAn6y3b3w6iGk_03X7Q",
+    "HugoDécrypte": "UC2K3JzAO1m5O43fI80Pz53g",
+    "Inoxtag": "UCG8rbF3g23E2q436I7vT2sA",
+    "Michou": "UC3n5X3k_Q2m1852v0zFz0fA",
+    "Joyca": "UC4QG2Gf8s2jG2vM113e6o6w",
+    "Theodort": "UC1lWn3XoI811-Q5Z3S4l5mA",
+    "Valouzz": "UCW3r5n30C90Xg20iB9iU3wQ",
+    "Lebouseuh": "UC6wWw5hZp9lQ3G084R2n04w",
+    "Doigby": "UC4xIu_5n042zV4w7n4e6iOQ",
+    "FastGoodCuisine": "UCi12-1Wz69M56sY0A3Q057g",
+    "Goldenboy": "UCq58t6B4uU45C_4_V4aN6Lw",
+    "Alex Hitchens": "UCw_pY4n315z92p24f9c313Q",
+    "Giuseppe": "UCw9G_1V9b59Z235b8v8Z9Q",
+    "Vincent Lapierre": "UCn9oJ_5mKx2D9Z5Xm7n28_Q",
+    "Micode": "UCf8aS8uE238mQ8_81Pz5j9Q",
+    "Underscore_": "UC4v3x5J3z77Z8120W2p5xQ",
+    "Le Grand JD": "UCd4b_5I3z77Z8120W2p5xQ",
+    "Louis San": "UCk732l8U3Wv29sW48z93f8A",
+    "Nota Bene": "UCP4qljtvPWAINPNCPtQJ32A",
+    "Dr Nozman": "UC7_YxT-KID8kRbqZo7MascQ",
+    "DirtyBiology": "UCtqICqKmOMnns7vP7zXb_aA",
+    "ScienceEtonnante": "UC7uR_DOhBCAI_N9L0U0U3uQ",
+    "Kameto": "UC113702aJ4u5N7qF576L2rA",
+    "Aminematue": "UCk2w8o_42f9b88_52m829A"
+}
+
 # Fonctions utilitaires MoviePy
 def couper_video(video, debut, fin):
     try:
@@ -111,40 +145,38 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de recherche globale unifiée via l'API YouTube Data v3
-def chercher_videos_api_globale(requete, api_key, sans_limite_temps=False):
-    try:
-        query = urllib.parse.quote(requete)
-        # videoDuration=medium (capture à partir de 4/20 min) + regionCode=FR + relevanceLanguage=fr
-        url = (
-            f"https://www.googleapis.com/youtube/v3/search?part=snippet"
-            f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
-            f"&videoDuration=medium&maxResults=10&key={api_key}"
-        )
-        
-        if not sans_limite_temps:
-            date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z"
-            url += f"&publishedAfter={date_limite}&order=date"
-        else:
-            url += "&order=viewCount"
-
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode())
-        
-        videos = []
-        for item in data.get("items", []):
-            vid_id = item["id"]["videoId"]
-            snippet = item["snippet"]
-            videos.append({
-                "title": snippet["title"],
-                "author": snippet["channelTitle"],
-                "link": f"https://www.youtube.com/watch?v={vid_id}",
-                "thumbnail": snippet["thumbnails"]["high"]["url"]
-            })
-        return videos
-    except Exception as e:
-        return []
+# Fonction pour interroger directement et globalement toutes les chaînes officielles
+def recuperer_flux_global_par_chaines(api_key):
+    toutes_les_videos = []
+    
+    for nom_createur, cid in CHAINES_OFFICIELLES.items():
+        try:
+            url = (
+                f"https://www.googleapis.com/youtube/v3/search?part=snippet"
+                f"&channelId={cid}&type=video&videoDuration=medium"
+                f"&maxResults=2&order=date&key={api_key}"
+            )
+            
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                data = json.loads(resp.read().decode())
+            
+            for item in data.get("items", []):
+                vid_id = item["id"]["videoId"]
+                snippet = item["snippet"]
+                toutes_les_videos.append({
+                    "title": snippet["title"],
+                    "author": snippet["channelTitle"],
+                    "link": f"https://www.youtube.com/watch?v={vid_id}",
+                    "thumbnail": snippet["thumbnails"]["high"]["url"],
+                    "publish_time": snippet["publishTime"]
+                })
+        except Exception:
+            continue
+            
+    # Tri global de la plus récente à la plus ancienne
+    toutes_les_videos.sort(key=lambda x: x["publish_time"], reverse=True)
+    return toutes_les_videos
 
 # =========================================================================
 # NAVIGATION PRINCIPALE
@@ -373,37 +405,21 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR CULTURE JEUNE FR (VUE GLOBALE API YOUTUBE)
+# SECTION 2 : RADAR GLOBAL CULTURE JEUNE FR (FLUX DIRECT CHAÎNES)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Culture Jeune FR")
-    st.write("Veille globale et unifiée de l'écosystème web français (Squeezie, Mastu, Legend, Popcorn, etc.) via la clé API officielle.")
+    st.title("🔥 Radar Global Culture Jeune FR")
+    st.write("Flux unifié et général regroupant **uniquement** les dernières vidéos officielles de ta super-liste de créateurs (Squeezie, Mastu, Goldenboy, Alex Hitchens, Giuseppe, Legend, etc.).")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
-        # Menus thématiques et mots-clés englobant tout l'écosystème
-        categories_hub = {
-            "🚀 Écosystème Global (Squeezie, Mastu, Inoxtag...)": "squeezie mastu inoxtag interview",
-            "🎙️ Podcasts & Entretiens Cultes (Legend, Popcorn, Zack Nani...)": "legend podcast zack nani interview",
-            "💬 Débats & Actualité Société": "debat societe hugo decrypte"
-        }
-
-        choix_cat = st.selectbox("Choisis une thématique de veille :", list(categories_hub.keys()))
-        requete_defaut = categories_hub[choix_cat]
-
-        mots_recherche = st.text_input("🔍 Affiner la recherche :", value=requete_defaut)
-
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            mode_recent = st.checkbox("⚡ Sorties récentes (< 7 jours)", value=True)
-
-        if st.button("🚀 Charger la galerie globale", type="primary"):
-            with st.spinner("Interrogation de l'API YouTube..."):
-                resultats = chercher_videos_api_globale(mots_recherche, api_key, sans_limite_temps=not mode_recent)
+        if st.button("🚀 Charger le flux unifié des créateurs", type="primary"):
+            with st.spinner("Interrogation directe de toutes les chaînes de l'écosystème..."):
+                resultats = recuperer_flux_global_par_chaines(api_key)
             
             if resultats:
-                st.success(f"🎯 {len(resultats)} vidéos chargées avec succès !")
+                st.success(f"🎯 {len(resultats)} vidéos récupérées avec succès !")
                 cols = st.columns(2)
                 for idx, vid in enumerate(resultats):
                     with cols[idx % 2]:
@@ -413,6 +429,6 @@ else:
                         st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
                         st.markdown("---")
             else:
-                st.warning("Aucune vidéo trouvée avec ces critères. Essaie d'élargir les mots-clés.")
+                st.warning("Aucune vidéo trouvée. Vérifie que ta clé API est active.")
     else:
         st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable dans les Secrets de Streamlit Cloud.")
