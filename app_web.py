@@ -113,11 +113,17 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de recherche API : France (FR) + Formats longs (20 à 60 min)
+# Fonction de recherche API : Triée par nombre de vues (Virale / Top France 15-30 ans)
 def chercher_videos_api(requete, api_key):
     try:
         query = urllib.parse.quote(requete)
-        url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&regionCode=FR&videoDuration=long&maxResults=10&order=date&key={api_key}"
+        # order=viewCount trie par les vidéos les plus vues de l'histoire/du sujet
+        # regionCode=FR & relevanceLanguage=fr ciblent le public jeune francophone
+        url = (
+            f"https://www.googleapis.com/youtube/v3/search?part=snippet"
+            f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
+            f"&videoDuration=long&order=viewCount&maxResults=10&key={api_key}"
+        )
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
@@ -380,33 +386,33 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : TENDANCES YOUTUBE & RADAR VISUEL
+# SECTION 2 : TENDANCES YOUTUBE & RADAR VISUEL (TOPS VIRAUX 15-30 ANS)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar à Idées & Veille YouTube")
-    st.write("Sélectionne une thématique ou cherche directement des contenus français de 20 à 60 minutes.")
+    st.title("🔥 Radar Tops Viraux France (15-30 ans)")
+    st.write("Affiche les vidéos les plus vues de France (podcasts, talks, interviews cultes) triées par vues totales.")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
         categories_hubs = {
-            "🎙️ Interviews & Récits / Anecdotes": "interview histoire vraie",
-            "💬 Talks & Débats Clivants / Société": "debat societe",
-            "🛋️ Podcasts & Formats Assis": "podcast interview",
-            "🚀 Divertissement Populaire (Squeezie, Mastu...)": "divertissement interview"
+            "🚀 Tops Hits YouTube FR (Squeezie, McFly & Carlito, Mastu)": "squeezie mcfly carlito mastu interview",
+            "🎙️ Interviews & Anecdotes Cultes (Boxo, Legend, Popcorn)": "interview anecdote vraie histoire",
+            "💬 Débats & Discussions Clivantes": "debat clash societe",
+            "🛋️ Talks & Podcasts Populaires (Zen, Zack Nani, Legend)": "podcast talk show"
         }
 
-        choix_cat = st.selectbox("Choisis une thématique de veille :", list(categories_hubs.keys()))
+        choix_cat = st.selectbox("Choisis une thématique virale :", list(categories_hubs.keys()))
         requete_automatique = categories_hubs[choix_cat]
 
-        mots_recherche = st.text_input("🔍 Ou affine ta recherche personnalisée :", value=requete_automatique)
+        mots_recherche = st.text_input("🔍 Ou cherche un créateur / concept spécifique :", value=requete_automatique)
 
-        if st.button("🚀 Charger la galerie visuelle", type="primary"):
-            with st.spinner("Recherche des meilleures vidéos françaises (20 à 60 min)..."):
+        if st.button("🚀 Afficher les plus gros cartons", type="primary"):
+            with st.spinner("Recherche des vidéos francophones les plus vues..."):
                 resultats = chercher_videos_api(mots_recherche, api_key)
             
             if resultats:
-                st.success(f"{len(resultats)} vidéos chargées avec succès !")
+                st.success(f"{len(resultats)} vidéos très populaires chargées !")
                 cols = st.columns(2)
                 for idx, vid in enumerate(resultats):
                     with cols[idx % 2]:
@@ -416,6 +422,6 @@ else:
                         st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
                         st.markdown("---")
             else:
-                st.warning("Aucune vidéo trouvée avec ces critères stricts. Essaie d'élargir les mots-clés.")
+                st.warning("Aucune vidéo trouvée. Essaie avec des mots-clés plus généraux.")
     else:
-        st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable. Configure-la dans les Secrets de Streamlit Cloud pour afficher les miniatures.")
+        st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable. Configure-la dans les Secrets de Streamlit Cloud pour afficher la galerie.")
