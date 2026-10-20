@@ -111,15 +111,16 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de récupération globale robuste par lots de créateurs
+# Fonction robuste pour récupérer les miniatures des créateurs phares
 def recuperer_miniatures_radar(api_key, mode_recent=True):
     toutes_les_videos = []
     
-    # Écosystème élargi incluant tes demandes spécifiques (Squeezie, Mastu, Legend, Goldenboy, Alex Hitchens, Giuseppe, etc.)
+    # Liste complète de l'écosystème web français (15-30 ans)
     createurs_cibles = [
         "Squeezie", "Mastu", "Legend Guillaume Pley", "McFly Carlito", 
         "Zack Nani", "Popcorn talk", "Alex Hitchens", "Goldenboy", 
-        "Giuseppe", "Inoxtag", "Amixem", "Vincent Lapierre", "Micode"
+        "Giuseppe", "Inoxtag", "Amixem", "Vincent Lapierre", "Micode",
+        "HugoDécrypte", "Joyca", "Michou", "Theodort"
     ]
     
     for createur in createurs_cibles:
@@ -137,27 +138,33 @@ def recuperer_miniatures_radar(api_key, mode_recent=True):
             else:
                 url += "&order=viewCount"
 
-            req = urllib.request.Request(url)
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = json.loads(resp.read().decode())
             
             for item in data.get("items", []):
-                vid_id = item["id"]["videoId"]
-                snippet = item["snippet"]
-                toutes_les_videos.append({
-                    "title": snippet["title"],
-                    "author": snippet["channelTitle"],
-                    "link": f"https://www.youtube.com/watch?v={vid_id}",
-                    "thumbnail": snippet["thumbnails"]["high"]["url"],
-                    "publish_time": snippet.get("publishTime", "")
-                })
+                vid_id = item.get("id", {}).get("videoId")
+                if not vid_id:
+                    continue
+                snippet = item.get("snippet", {})
+                thumbnails = snippet.get("thumbnails", {})
+                thumb_url = thumbnails.get("high", {}).get("url") or thumbnails.get("medium", {}).get("url")
+                
+                if thumb_url:
+                    toutes_les_videos.append({
+                        "title": snippet.get("title", "Sans titre"),
+                        "author": snippet.get("channelTitle", createur),
+                        "link": f"https://www.youtube.com/watch?v={vid_id}",
+                        "thumbnail": thumb_url,
+                        "publish_time": snippet.get("publishTime", "")
+                    })
         except Exception:
             continue
             
-    # Dédoublonnage et tri
+    # Dédoublonnage par lien et tri
     videos_uniques = {v['link']: v for v in toutes_les_videos}.values()
     liste_finale = list(videos_uniques)
-    if mode_recent:
+    if mode_recent and liste_finale:
         liste_finale.sort(key=lambda x: x["publish_time"], reverse=True)
     return liste_finale
 
@@ -388,16 +395,15 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR CULTURE JEUNE FR (GALERIE DE MINIATURES & ACTUALISATION)
+# SECTION 2 : RADAR CULTURE JEUNE FR (GALERIE DE MINIATURES STABILISÉE)
 # -------------------------------------------------------------------------
 else:
     st.title("🔥 Radar Culture Jeune FR - Galerie Visuelle")
-    st.write("Galerie de miniatures officielles de l'écosystème web français. Utilise le bouton d'actualisation pour charger et voir plus de contenu.")
+    st.write("Galerie de miniatures officielles de l'écosystème web français. Clique sur **Actualiser** pour lancer ou rafraîchir la veille.")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
-        # Options de filtre temporel
         choix_periode = st.radio(
             "Période des vidéos :",
             ["⚡ Sorties Récentes (Moins de 7 jours)", "🏆 Best-Of Historique (Toutes les plus vues)"],
@@ -405,27 +411,23 @@ else:
         )
         mode_recent = True if "Récentes" in choix_periode else False
 
-        # Bouton d'actualisation / chargement
-        if st.button("🔄 Actualiser / Voir plus de miniatures", type="primary"):
-            with st.spinner("Chargement des miniatures de l'écosystème..."):
-                resultats = recuperer_miniatures_radar(api_key, mode_recent=mode_recent)
-            
-            # Stockage en session state pour garder l'affichage actif
-            st.session_state['galerie_videos'] = resultats
+        # Bouton d'actualisation propre relié au state
+        if st.button("🔄 Actualiser / Charger les miniatures", type="primary"):
+            with st.spinner("Récupération des miniatures en cours..."):
+                st.session_state['galerie_videos'] = recuperer_miniatures_radar(api_key, mode_recent=mode_recent)
 
-        # Affichage de la galerie si des vidéos sont chargées en mémoire
+        # Affichage sécurisé de la galerie
         if 'galerie_videos' in st.session_state and st.session_state['galerie_videos']:
-            st.success(f"🖼️ {len(st.session_state['galerie_videos'])} miniatures affichées !")
+            st.success(f"🖼️ {len(st.session_state['galerie_videos'])} miniatures chargées !")
             cols = st.columns(2)
             for idx, vid in enumerate(st.session_state['galerie_videos']):
                 with cols[idx % 2]:
-                    # Affichage pur de la miniature officielle YouTube
                     st.image(vid['thumbnail'], use_column_width=True)
                     st.markdown(f"**{vid['title']}**")
                     st.caption(f"📺 {vid['author']}")
                     st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_mini_{idx}")
                     st.markdown("---")
         else:
-            st.info("💡 Clique sur le bouton **🔄 Actualiser** ci-dessus pour afficher la galerie de miniatures.")
+            st.info("💡 Clique sur **🔄 Actualiser / Charger les miniatures** pour afficher la grille.")
     else:
         st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable dans les Secrets de Streamlit Cloud.")
