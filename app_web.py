@@ -5,11 +5,8 @@ import cv2
 import numpy as np
 import streamlit as st
 from PIL import Image
-try:
-    from moviepy import VideoFileClip, ImageClip, CompositeVideoClip
-except ImportError:
-    from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
-    
+from moviepy import VideoFileClip, ImageClip, CompositeVideoClip
+
 # Configuration de la page web
 st.set_page_config(page_title="Studio TikTok Mobile", page_icon="🎬", layout="centered")
 
@@ -209,8 +206,11 @@ if uploaded_files:
             
             # --- TRAITEMENT STANDARD (RETABLI PROPREMENT) ---
             elif option == "Traitement Standard":
-                nouvelle_duree = video.duration - 3
-                video_coupee = video.subclipped(0, nouvelle_duree) if nouvelle_duree > 0 else video
+nouvelle_duree = video.duration - 3
+try:
+    video_coupee = video.subclipped(0, nouvelle_duree) if nouvelle_duree > 0 else video
+except AttributeError:
+    video_coupee = video.subclip(0, nouvelle_duree) if nouvelle_duree > 0 else video
                 
                 logo = ImageClip(chemin_logo).with_duration(video_coupee.duration).resized(width=200)
                 if os.path.exists(chemin_config):
