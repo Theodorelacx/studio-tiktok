@@ -105,7 +105,7 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de récupération des miniatures
+# Fonction de récupération blindée avec secours automatique
 def recuperer_miniatures_radar(api_key, mode_recent=True):
     toutes_les_videos = []
     createurs_cibles = [
@@ -118,6 +118,8 @@ def recuperer_miniatures_radar(api_key, mode_recent=True):
     for createur in createurs_cibles:
         try:
             query = urllib.parse.quote(createur)
+            
+            # Première tentative avec les critères choisis
             url = (
                 f"https://www.googleapis.com/youtube/v3/search?part=snippet"
                 f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
@@ -134,7 +136,21 @@ def recuperer_miniatures_radar(api_key, mode_recent=True):
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = json.loads(resp.read().decode())
             
-            for item in data.get("items", []):
+            items = data.get("items", [])
+            
+            # SÉCURITÉ DE SECOURS : Si le mode récent ne renvoie rien pour ce créateur, on élargit sans limite de temps
+            if not items and mode_recent:
+                url_secours = (
+                    f"https://www.googleapis.com/youtube/v3/search?part=snippet"
+                    f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
+                    f"&videoDuration=medium&maxResults=1&order=viewCount&key={api_key}"
+                )
+                req_secours = urllib.request.Request(url_secours, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req_secours, timeout=4) as resp_secours:
+                    data_secours = json.loads(resp_secours.read().decode())
+                items = data_secours.get("items", [])
+
+            for item in items:
                 vid_id = item.get("id", {}).get("videoId")
                 if not vid_id:
                     continue
