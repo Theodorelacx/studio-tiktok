@@ -111,11 +111,9 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction robuste pour récupérer les miniatures des créateurs phares
+# Fonction sécurisée pour récupérer les miniatures
 def recuperer_miniatures_radar(api_key, mode_recent=True):
     toutes_les_videos = []
-    
-    # Liste complète de l'écosystème web français (15-30 ans)
     createurs_cibles = [
         "Squeezie", "Mastu", "Legend Guillaume Pley", "McFly Carlito", 
         "Zack Nani", "Popcorn talk", "Alex Hitchens", "Goldenboy", 
@@ -150,7 +148,7 @@ def recuperer_miniatures_radar(api_key, mode_recent=True):
                 thumbnails = snippet.get("thumbnails", {})
                 thumb_url = thumbnails.get("high", {}).get("url") or thumbnails.get("medium", {}).get("url")
                 
-                if thumb_url:
+                if thumb_url and thumb_url.startswith("http"):
                     toutes_les_videos.append({
                         "title": snippet.get("title", "Sans titre"),
                         "author": snippet.get("channelTitle", createur),
@@ -161,7 +159,6 @@ def recuperer_miniatures_radar(api_key, mode_recent=True):
         except Exception:
             continue
             
-    # Dédoublonnage par lien et tri
     videos_uniques = {v['link']: v for v in toutes_les_videos}.values()
     liste_finale = list(videos_uniques)
     if mode_recent and liste_finale:
@@ -399,7 +396,7 @@ if section_principale == "🎬 Montage Vidéo":
 # -------------------------------------------------------------------------
 else:
     st.title("🔥 Radar Culture Jeune FR - Galerie Visuelle")
-    st.write("Galerie de miniatures officielles de l'écosystème web français. Clique sur **Actualiser** pour lancer ou rafraîchir la veille.")
+    st.write("Galerie de miniatures officielles de l'écosystème web français. Clique sur **Actualiser** pour charger ou rafraîchir la veille.")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
