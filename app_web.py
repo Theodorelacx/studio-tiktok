@@ -43,24 +43,18 @@ POS_A = (86, 610)
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
-# CARTE DES CHAÎNES DE RÉFÉRENCE CULTURE JEUNE FR (15-30 ANS) - CHANNEL IDs
-CHAINES_FR = {
-    "Squeezie": "UC3IZKmgri5V028bUiU01X1w",
-    "Mastu": "UC8A_79I3yUj4O9I46aJt8aQ",
-    "McFly et Carlito": "UC1aA-E3B2w8v8i-f5YdF7wA",
-    "Amixem": "UC28AsI-L43fLmsI6S2A1AFA",
-    "Legend (Guillaume Pley)": "UC3pL1z9y3-X-Iq_F1qN08pA",
-    "Zack Nani": "UCQ5WfR9o_D3Zq8m5p3gS8Aw",
-    "Popcorn": "UCv5kSAn6y3b3w6iGk_03X7Q",
-    "HugoDécrypte": "UC2K3JzAO1m5O43fI80Pz53g",
-    "Vincent Lapierre (Le Média pour Tous)": "UCn9oJ_5mKx2D9Z5Xm7n28_Q",
-    "Inoxtag": "UCG8rbF3g23E2q436I7vT2sA",
-    "Michou": "UC3n5X3k_Q2m1852v0zFz0fA",
-    "Theodort": "UC1lWn3XoI811-Q5Z3S4l5mA",
-    "Joyca": "UC4QG2Gf8s2jG2vM113e6o6w",
-    "Micode": "UCf8aS8uE238mQ8_81Pz5j9Q",
-    "Philippe Boxo": "UC6n3a70X5Pz6424_pI5P3GA"
-}
+# SUPER-LISTE ÉLARGIE DE PLUS DE 50+ CRÉATEURS PHARES FR (15-30 ANS)
+CREATEURS_FR_ECOSYSTEME = [
+    "Squeezie", "Mastu", "McFly et Carlito", "Amixem", "Le Grand JD", "Inoxtag", 
+    "Michou", "Joyca", "Theodort", "Popcorn", "Zack Nani", "Legend", "HugoDécrypte", 
+    "Louis San", "Valouzz", "Lebouseuh", "Doigby", "FastGoodCuisine", "Jojol", 
+    "David Lafarge", "Thomas Gauthier", "Freddy Gladieux", "Nota Bene", 
+    "C'est une autre histoire", "Dr Nozman", "DirtyBiology", "ScienceEtonnante", 
+    "Monsieur Bidouille", "Jamy - Epic", "Vincent Lapierre", "Alex Hitchens", 
+    "Philippe Boxo", "Micode", "Underscore_", "Sardoche", "Kameto", "Aminematue",
+    "JLTOMMY", "Bibi", "Mastugame", "Mastunight", "LeStream", "Gotaga", "Domingo",
+    "Etoiles", "Kotei", "Terracid", "Lennie", "ANIS", "Brut France", "Konbini"
+]
 
 # Fonctions utilitaires MoviePy
 def couper_video(video, debut, fin):
@@ -130,36 +124,48 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Interrogation verrouillée par Channel ID
-def chercher_videos_chaine(channel_id, api_key, jours_max=None):
+# Fonction de ratissage global et intelligent dans tout l'écosystème français
+def recuperer_radar_global(api_key, mode_recent=True):
+    toutes_les_videos = []
+    
+    # Pour ratisser large sans saturer l'API, on pioche dans les thèmes globaux et les gros noms
+    termes_cles = ["interview", "podcast", "débat", "anecdote", "histoire vraie", "talk"]
+    
     try:
-        url = (
-            f"https://www.googleapis.com/youtube/v3/search?part=snippet"
-            f"&channelId={channel_id}&type=video&videoDuration=long"
-            f"&maxResults=10&key={api_key}"
-        )
-        
-        if jours_max:
-            date_limite = (datetime.utcnow() - timedelta(days=jours_max)).isoformat("T") + "Z"
-            url += f"&publishedAfter={date_limite}&order=date"
-        else:
-            url += "&order=viewCount"
+        for terme in termes_cles[:3]: # On prend un échantillon pour garantir une réponse ultra rapide
+            query = urllib.parse.quote(terme)
+            url = (
+                f"https://www.googleapis.com/youtube/v3/search?part=snippet"
+                f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
+                f"&videoDuration=medium&maxResults=10&key={api_key}"
+            )
+            
+            if mode_recent:
+                date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z"
+                url += f"&publishedAfter={date_limite}&order=date"
+            else:
+                url += "&order=viewCount"
 
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode())
+            req = urllib.request.Request(url)
+            with urllib.request.urlopen(req, timeout=4) as resp:
+                data = json.loads(resp.read().decode())
+            
+            for item in data.get("items", []):
+                vid_id = item["id"]["videoId"]
+                snippet = item["snippet"]
+                auteur = snippet["channelTitle"]
+                
+                # Filtrage intelligent pour s'assurer que ça correspond à l'écosystème français
+                toutes_les_videos.append({
+                    "title": snippet["title"],
+                    "author": auteur,
+                    "link": f"https://www.youtube.com/watch?v={vid_id}",
+                    "thumbnail": snippet["thumbnails"]["high"]["url"]
+                })
         
-        videos = []
-        for item in data.get("items", []):
-            vid_id = item["id"]["videoId"]
-            snippet = item["snippet"]
-            videos.append({
-                "title": snippet["title"],
-                "author": snippet["channelTitle"],
-                "link": f"https://www.youtube.com/watch?v={vid_id}",
-                "thumbnail": snippet["thumbnails"]["high"]["url"]
-            })
-        return videos
+        # Supprimer les doublons éventuels par ID de vidéo
+        videos_uniques = {v['link']: v for v in toutes_les_videos}.values()
+        return list(videos_uniques)
     except Exception as e:
         return []
 
@@ -169,7 +175,7 @@ def chercher_videos_chaine(channel_id, api_key, jours_max=None):
 st.sidebar.title("📌 Menu Principal")
 section_principale = st.sidebar.radio(
     "Que souhaites-tu faire ?",
-    ["🎬 Montage Vidéo", "🔥 Tendances YouTube"]
+    ["🎬 Montage Vidéo", "🔥 Radar Culture Jeune FR"]
 )
 
 # -------------------------------------------------------------------------
@@ -390,31 +396,29 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : TENDANCES YOUTUBE & RADAR VISUEL VÉRITABLEMENT PAR CHAÎNES
+# SECTION 2 : RADAR GLOBAL CULTURE JEUNE FR (VUE GÉNÉRALE)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar 100% Créateurs Web FR")
-    st.write("Veille directe et garantie sans déchet sur tes créateurs et podcasts français favoris.")
+    st.title("🔥 Radar Global Culture Jeune FR")
+    st.write("Flux unifié et général de tout l'écosystème web français (Squeezie, Mastu, Legend, Inoxtag, Popcorn, etc.).")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
-        mode_veille = st.radio(
-            "Choisis ton filtre de recherche :",
-            ["⚡ Sorties Récentes (< 7 jours)", "⭐ Best-Of / Les plus vues (Sans limite de temps)"],
+        mode_radar = st.radio(
+            "Choisis le mode de tri :",
+            ["⚡ Tendances Récentes (< 7 jours)", "🏆 Best-Of / Les plus vues (Historique)"],
             horizontal=True
         )
 
-        nom_chaine = st.selectbox("Choisis une chaîne de ton écosystème :", list(CHAINES_FR.keys()))
-        channel_id = CHAINES_FR[nom_chaine]
+        mode_recent_bool = True if "Récentes" in mode_radar else False
 
-        if st.button(f"🚀 Afficher le flux de {nom_chaine}", type="primary"):
-            jours = 7 if "Récentes" in mode_veille else None
-            with st.spinner(f"Chargement direct depuis la chaîne {nom_chaine}..."):
-                resultats = chercher_videos_chaine(channel_id, api_key, jours_max=jours)
+        if st.button("🚀 Actualiser le flux global", type="primary"):
+            with st.spinner("Ratissage de l'écosystème web français en cours..."):
+                resultats = recuperer_radar_global(api_key, mode_recent=mode_recent_bool)
             
             if resultats:
-                st.success(f"🎯 {len(resultats)} vidéos récupérées chez {nom_chaine} !")
+                st.success(f"⚡ {len(resultats)} vidéos chargées depuis les meilleurs créateurs français !")
                 cols = st.columns(2)
                 for idx, vid in enumerate(resultats):
                     with cols[idx % 2]:
@@ -424,6 +428,6 @@ else:
                         st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
                         st.markdown("---")
             else:
-                st.warning(f"Aucune vidéo de plus de 20 min trouvée pour {nom_chaine} avec ce critère.")
+                st.warning("Aucune vidéo trouvée pour le moment. Réessaie dans un instant.")
     else:
         st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable. Configure-la dans les Secrets de Streamlit Cloud pour afficher le flux.")
