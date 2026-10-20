@@ -43,18 +43,24 @@ POS_A = (86, 610)
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
-# LISTE ÉTENDUE DE ~50 CRÉATEURS PHARES FR (15-30 ans)
-CREATEURS_FR_PHARES = [
-    "Squeezie", "Mastu", "McFly et Carlito", "Amixem", "Le Grand JD", "Inoxtag", 
-    "Michou", "Joyca", "Theodort", "Popcorn", "Zack Nani", "Legend", "HugoDécrypte", 
-    "Louis San", "Gabaye", "Valouzz", "Lebouseuh", "Doigby", "FastGoodCuisine", 
-    "Jojol", "David Lafarge", "Thomas Gauthier", "ANIS", "Freddy Gladieux", 
-    "E_Riot", "Nota Bene", "C'est une autre histoire", "Brunof", "El Jj", 
-    "Lama Faché", "Dr Nozman", "DirtyBiology", "ScienceEtonnante", "Paradox", 
-    "Stardust", "Monsieur Bidouille", "Jamy - Epic", "Hugo Travers", "Elise Lucet", 
-    "Boulet", "Goulag", "Batflair", "Vincent Lapierre", "Alex Hitchens", "Goldenboy", 
-    "Philippe Boxo", "Micode", "Underscore_", "Sardoche", "Kameto", "Aminematue"
-]
+# CARTE DES CHAÎNES DE RÉFÉRENCE CULTURE JEUNE FR (15-30 ANS) - CHANNEL IDs
+CHAINES_FR = {
+    "Squeezie": "UC3IZKmgri5V028bUiU01X1w",
+    "Mastu": "UC8A_79I3yUj4O9I46aJt8aQ",
+    "McFly et Carlito": "UC1aA-E3B2w8v8i-f5YdF7wA",
+    "Amixem": "UC28AsI-L43fLmsI6S2A1AFA",
+    "Legend (Guillaume Pley)": "UC3pL1z9y3-X-Iq_F1qN08pA",
+    "Zack Nani": "UCQ5WfR9o_D3Zq8m5p3gS8Aw",
+    "Popcorn": "UCv5kSAn6y3b3w6iGk_03X7Q",
+    "HugoDécrypte": "UC2K3JzAO1m5O43fI80Pz53g",
+    "Vincent Lapierre (Le Média pour Tous)": "UCn9oJ_5mKx2D9Z5Xm7n28_Q",
+    "Inoxtag": "UCG8rbF3g23E2q436I7vT2sA",
+    "Michou": "UC3n5X3k_Q2m1852v0zFz0fA",
+    "Theodort": "UC1lWn3XoI811-Q5Z3S4l5mA",
+    "Joyca": "UC4QG2Gf8s2jG2vM113e6o6w",
+    "Micode": "UCf8aS8uE238mQ8_81Pz5j9Q",
+    "Philippe Boxo": "UC6n3a70X5Pz6424_pI5P3GA"
+}
 
 # Fonctions utilitaires MoviePy
 def couper_video(video, debut, fin):
@@ -124,24 +130,19 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de recherche API stricte France + Filtre temporel (7 jours max ou illimité)
-def chercher_videos_api(requete, api_key, sans_limite_temps=False):
+# Interrogation verrouillée par Channel ID
+def chercher_videos_chaine(channel_id, api_key, jours_max=None):
     try:
-        query = urllib.parse.quote(requete)
-        
-        # Base de l'URL obligatoire orientée France et langue française pour éliminer l'anglais
         url = (
             f"https://www.googleapis.com/youtube/v3/search?part=snippet"
-            f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
-            f"&videoDuration=long&maxResults=15&key={api_key}"
+            f"&channelId={channel_id}&type=video&videoDuration=long"
+            f"&maxResults=10&key={api_key}"
         )
         
-        # Si on veut du très récent (< 1 semaine)
-        if not sans_limite_temps:
-            date_il_y_a_une_semaine = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z"
-            url += f"&publishedAfter={date_il_y_a_une_semaine}&order=date"
+        if jours_max:
+            date_limite = (datetime.utcnow() - timedelta(days=jours_max)).isoformat("T") + "Z"
+            url += f"&publishedAfter={date_limite}&order=date"
         else:
-            # Pour la liste de référence : pas de limite de date, on prend les plus vues/pertinentes de ces créateurs
             url += "&order=viewCount"
 
         req = urllib.request.Request(url)
@@ -389,41 +390,31 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : TENDANCES YOUTUBE & RADAR VISUEL INTELLIGENT
+# SECTION 2 : TENDANCES YOUTUBE & RADAR VISUEL VÉRITABLEMENT PAR CHAÎNES
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Culture Jeune France & Veille")
-    st.write("Découvre les tendances récentes (< 7 jours) ou plonge dans la liste fixe de tes créateurs favoris de référence.")
+    st.title("🔥 Radar 100% Créateurs Web FR")
+    st.write("Veille directe et garantie sans déchet sur tes créateurs et podcasts français favoris.")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
-        categories_hubs = {
-            "🚀 Tendances Générales FR (< 7 jours)": "interview divertissement",
-            "💬 Débats, Société & Clivant (< 7 jours)": "debat societe",
-            "🎙️ Podcasts & Entretiens Récents (< 7 jours)": "podcast interview",
-            "⭐ Chaînes de Référence (Liste Fixe / Sans limite de temps)": "REFERENCE_LISTE"
-        }
+        mode_veille = st.radio(
+            "Choisis ton filtre de recherche :",
+            ["⚡ Sorties Récentes (< 7 jours)", "⭐ Best-Of / Les plus vues (Sans limite de temps)"],
+            horizontal=True
+        )
 
-        choix_cat = st.selectbox("Choisis ton mode de veille :", list(categories_hubs.keys()))
-        
-        if choix_cat == "⭐ Chaînes de Référence (Liste Fixe / Sans limite de temps)":
-            st.info("💡 Mode liste fixe activé : recherche sans limite de temps parmi tes créateurs favoris (Squeezie, Mastu, Boxo, Vincent Lapierre, Legend, etc.)")
-            # Sélection aléatoire ou ciblée dans la liste des 50 créateurs pour ratisser large
-            createur_choisi = st.selectbox("Choisis un créateur de la liste :", CREATEURS_FR_PHARES)
-            mots_recherche = f"{createur_choisi} interview podcast"
-            sans_limite = True
-        else:
-            requete_automatique = categories_hubs[choix_cat]
-            mots_recherche = st.text_input("🔍 Affiner la recherche :", value=requete_automatique)
-            sans_limite = False
+        nom_chaine = st.selectbox("Choisis une chaîne de ton écosystème :", list(CHAINES_FR.keys()))
+        channel_id = CHAINES_FR[nom_chaine]
 
-        if st.button("🚀 Charger la galerie visuelle", type="primary"):
-            with st.spinner("Analyse et récupération des pépites françaises..."):
-                resultats = chercher_videos_api(mots_recherche, api_key, sans_limite_temps=sans_limite)
+        if st.button(f"🚀 Afficher le flux de {nom_chaine}", type="primary"):
+            jours = 7 if "Récentes" in mode_veille else None
+            with st.spinner(f"Chargement direct depuis la chaîne {nom_chaine}..."):
+                resultats = chercher_videos_chaine(channel_id, api_key, jours_max=jours)
             
             if resultats:
-                st.success(f"🎯 {len(resultats)} vidéos chargées avec succès !")
+                st.success(f"🎯 {len(resultats)} vidéos récupérées chez {nom_chaine} !")
                 cols = st.columns(2)
                 for idx, vid in enumerate(resultats):
                     with cols[idx % 2]:
@@ -433,6 +424,6 @@ else:
                         st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
                         st.markdown("---")
             else:
-                st.warning("Aucune vidéo trouvée avec ces critères stricts. Essaie un autre créateur ou élargis la recherche.")
+                st.warning(f"Aucune vidéo de plus de 20 min trouvée pour {nom_chaine} avec ce critère.")
     else:
-        st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable. Configure-la dans les Secrets de Streamlit Cloud pour afficher la galerie.")
+        st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable. Configure-la dans les Secrets de Streamlit Cloud pour afficher le flux.")
