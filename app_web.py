@@ -7,7 +7,7 @@ import streamlit as st
 from PIL import Image
 import urllib.request
 import urllib.parse
-import xml.etree.ElementTree as ET
+import json
 
 # Import sécurisé de MoviePy pour compatibilité PC / Cloud
 try:
@@ -42,7 +42,7 @@ POS_A = (86, 610)             # Position 1 - X=86, Y=610
 POS_B = (485, 861)            # Position 2 - X=485, Y=861
 # -------------------------------------------------------------------------
 
-# Fonctions utilitaires de compatibilité universelle MoviePy (v1 vs v2)
+# Fonctions utilitaires de compatibilité universelle MoviePy
 def couper_video(video, debut, fin):
     try:
         return video.subclipped(debut, fin) if fin > 0 else video
@@ -82,7 +82,6 @@ def rogner_video(video, x1, y1, x2, y2):
     except AttributeError:
         return video.crop(x1=x1, y1=y1, x2=x2, y2=y2)
 
-# Fonction pour transformer le fond noir en transparence (détourage parfait)
 def obtenir_logo_detoure(chemin_img):
     if not os.path.exists(chemin_img):
         return chemin_img
@@ -103,7 +102,6 @@ def obtenir_logo_detoure(chemin_img):
     cv2.imwrite(chemin_temp_propre, img_rgba)
     return chemin_temp_propre
 
-# Fonction pour lire config.txt (pour le mode Standard)
 def lire_coordonnees():
     if os.path.exists(chemin_config):
         try:
@@ -115,41 +113,28 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de ratissage maximal avec filet de secours multi-termes
-def recuperer_galerie_youtube(requete):
-    mots_cles_a_tester = [requete, "video", "france", "tendance", "humour", "podcast"]
-    
-    for terme in mots_cles_a_tester:
-        try:
-            query_encoded = urllib.parse.quote(terme)
-            url = f"https://www.youtube.com/feeds/videos.xml?search_query={query_encoded}"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                xml_data = response.read()
-
-            root = ET.fromstring(xml_data)
-            ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
-
-            videos = []
-            for entry in root.findall('atom:entry', ns):
-                title_node = entry.find('atom:title', ns)
-                link_node = entry.find('atom:link', ns)
-                id_node = entry.find('yt:videoId', ns)
-                author_node = entry.find('atom:author/atom:name', ns)
-                
-                if title_node is not None and link_node is not None and id_node is not None:
-                    video_id = id_node.text
-                    videos.append({
-                        'title': title_node.text,
-                        'link': link_node.attrib.get('href', f"https://www.youtube.com/watch?v={video_id}"),
-                        'author': author_node.text if author_node is not None else "YouTube Creator",
-                        'thumbnail': f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-                    })
-            if videos:
-                return videos
-        except Exception:
-            continue
-    return []
+# Fonction pour chercher des vidéos via l'API YouTube officielle
+def chercher_videos_api(requete, api_key):
+    try:
+        query = urllib.parse.quote(requete)
+        url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&videoDuration=medium&maxResults=10&order=date&key={api_key}"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        
+        videos = []
+        for item in data.get("items", []):
+            vid_id = item["id"]["videoId"]
+            snippet = item["snippet"]
+            videos.append({
+                "title": snippet["title"],
+                "author": snippet["channelTitle"],
+                "link": f"https://www.youtube.com/watch?v={vid_id}",
+                "thumbnail": snippet["thumbnails"]["high"]["url"]
+            })
+        return videos
+    except Exception as e:
+        return []
 
 # =========================================================================
 # NAVIGATION PRINCIPALE (MENU DE L'APPLICATION)
@@ -167,23 +152,19 @@ if section_principale == "🎬 Montage Vidéo":
     st.title("🎬 Studio TikTok - Web & Mobile")
     st.write("Pilote ton studio de montage depuis ton PC ou ton téléphone !")
 
-    # Menu de choix de traitement
     option = st.selectbox(
         "Choisis ton mode de traitement :", 
         ["Traitement Standard", "Traitement avec Recadrage", "Traitement reallift00n"]
     )
 
-    # Zone d'envoi des vidéos
     st.subheader("1. Sélectionne tes vidéos brutes")
     uploaded_files = st.file_uploader("Glisse ou sélectionne tes vidéos brutes (.mp4)", type=["mp4"], accept_multiple_files=True)
 
-    # Initialisation de la session state pour stocker les coordonnées du centre (Mode Standard)
     if "centre_x" not in st.session_state or "centre_y" not in st.session_state:
         cx_def, cy_def = lire_coordonnees()
         st.session_state.centre_x = cx_def
         st.session_state.centre_y = cy_def
 
-    # Calage du Logo - Uniquement pour le Traitement Standard
     if uploaded_files and option == "Traitement Standard":
         st.markdown("---")
         st.subheader("2. Calage du Logo (Standard)")
@@ -227,7 +208,6 @@ if section_principale == "🎬 Montage Vidéo":
         if not os.path.exists(chemin_logo2) and not os.path.exists(chemin_logo2.replace(".png", ".jpg")):
             st.warning("⚠️ Attention : Le fichier `logo2.png` n'a pas été trouvé dans le dossier du projet.")
 
-    # Section Lancement du montage
     if uploaded_files:
         st.markdown("---")
         st.subheader("3. Lancement du montage")
@@ -258,10 +238,8 @@ if section_principale == "🎬 Montage Vidéo":
                 
                 video = VideoFileClip(chemin_in)
                 
-                # --- TRAITEMENT REALLIFT00N ---
                 if option == "Traitement reallift00n":
                     video_traitee = video
-                    
                     logo_brut = chemin_logo2
                     if not os.path.exists(logo_brut):
                         logo_brut_jpg = chemin_logo2.replace(".png", ".jpg")
@@ -271,7 +249,6 @@ if section_principale == "🎬 Montage Vidéo":
                             logo_brut = chemin_logo
                     
                     logo_file = obtenir_logo_detoure(logo_brut)
-                    
                     duree_p1 = min(FIN_LOGO_1, video_traitee.duration)
                     coin_a_x = POS_A[0] - int(TAILLE_LOGO_REALLIFT00N / 2)
                     coin_a_y = POS_A[1] - int(TAILLE_LOGO_REALLIFT00N / 2)
@@ -297,11 +274,9 @@ if section_principale == "🎬 Montage Vidéo":
                     
                     video_finale = CompositeVideoClip(elements_composite, size=video_traitee.size)
                 
-                # --- TRAITEMENT STANDARD ---
                 elif option == "Traitement Standard":
                     nouvelle_duree = video.duration - 3
                     video_coupee = couper_video(video, 0, nouvelle_duree)
-                    
                     logo_img = ImageClip(chemin_logo)
                     logo_img = definir_duree(logo_img, video_coupee.duration)
                     logo_res = redimensionner_image_clip(logo_img, width=200)
@@ -317,19 +292,15 @@ if section_principale == "🎬 Montage Vidéo":
                     logo = positionner_clip(logo_res, (x_coin, y_coin))
                     video_finale = CompositeVideoClip([video_coupee, logo], size=video_coupee.size)
                 
-                # --- TRAITEMENT AVEC RECADRAGE ---
                 else: 
                     nouvelle_duree = video.duration - 3
                     video_coupee = couper_video(video, 0, nouvelle_duree)
-                    
                     largeur, hauteur = video_coupee.size
                     video_recadree = rogner_video(video_coupee, 0, 120, largeur, hauteur)
-                    
                     logo_img = ImageClip(chemin_logo)
                     logo_img = definir_duree(logo_img, video_recadree.duration)
                     logo_res = redimensionner_image_clip(logo_img, width=150)
                     logo = positionner_clip(logo_res, (20, 20))
-                    
                     video_finale = CompositeVideoClip([video_recadree, logo], size=video_recadree.size)
                 
                 temp_audio = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
@@ -356,14 +327,12 @@ if section_principale == "🎬 Montage Vidéo":
                 
             st.success("🎉 Tous les montages sont terminés à vitesse maximale !")
 
-    # Section de gestion et téléchargement des vidéos finales
     st.markdown("---")
     st.subheader("📥 Gestion des vidéos finales")
     fichiers_finaux = [f for f in os.listdir(dossier_sortie) if f.endswith(".mp4")]
 
     if fichiers_finaux:
         st.write("Coche les vidéos que tu souhaites gérer :")
-        
         fichiers_selectionnes = []
         for f_fini in fichiers_finaux:
             col_chk, col_dl = st.columns([4, 1])
@@ -377,16 +346,13 @@ if section_principale == "🎬 Montage Vidéo":
                     st.download_button(label="📥", data=fichier_ouvert, file_name=f_fini, mime="video/mp4", key=f"dl_{f_fini}")
 
         st.markdown("---")
-        
         col_action1, col_action2 = st.columns(2)
-        
         with col_action1:
             if fichiers_selectionnes:
                 zip_path = os.path.join(dossier_actuel, "videos_selectionnees.zip")
                 with zipfile.ZipFile(zip_path, "w") as zipf:
                     for f_sel in fichiers_selectionnes:
                         zipf.write(os.path.join(dossier_sortie, f_sel), arcname=f_sel)
-                
                 with open(zip_path, "rb") as z_file:
                     st.download_button(
                         label=f"📦 Télécharger la sélection en ZIP ({len(fichiers_selectionnes)})",
@@ -406,54 +372,55 @@ if section_principale == "🎬 Montage Vidéo":
                     for f_sel in fichiers_selectionnes:
                         chemin_a_supprimer = os.path.join(dossier_sortie, f_sel)
                         if os.path.exists(chemin_a_supprimer):
-                            try:
-                                os.remove(chemin_a_supprimer)
-                            except Exception as e:
-                                try:
-                                    os.chmod(chemin_a_supprimer, 0o777)
-                                    os.remove(chemin_a_supprimer)
-                                except:
-                                    st.error(f"Impossible de supprimer {f_sel} : le fichier est verrouillé.")
+                            try: os.remove(chemin_a_supprimer)
+                            except: pass
                     st.success("Opération de suppression terminée !")
                     st.rerun()
-
     else:
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : TENDANCES YOUTUBE (RATISSAGE ULTRA LARGE & TOPS)
+# SECTION 2 : TENDANCES YOUTUBE (AVEC RACCOURCIS UNIVERSELS)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Massif & Tendances YouTube")
-    st.write("Flux continu de vidéos récentes pour alimenter ta production quotidienne en masse.")
+    st.title("🔥 Veille & Sources de Contenu YouTube")
+    st.write("Retrouve rapidement les vidéos des plus grands créateurs de France pour alimenter tes montages.")
 
-    # Options ultra larges pour forcer l'affichage immédiat
-    categories_dict = {
-        "🚀 Tendances & Tops France (Maximal)": "france",
-        "🔥 Actu & Buzz du moment": "actu",
-        "🎙️ Interviews & Talks Généraux": "interview",
-        "🍿 Divertissement Populaire": "divertissement"
+    # Détection de la clé d'API Streamlit Secrets
+    api_key = st.secrets.get("YOUTUBE_API_KEY", "")
+
+    if api_key:
+        mots_recherche = st.text_input("🔍 Recherche ciblée :", "Squeezie interview")
+        if st.button("Chercher"):
+            resultats = chercher_videos_api(mots_recherche, api_key)
+            if resultats:
+                cols = st.columns(2)
+                for idx, vid in enumerate(resultats):
+                    with cols[idx % 2]:
+                        st.image(vid['thumbnail'], use_column_width=True)
+                        st.markdown(f"**{vid['title']}**")
+                        st.caption(f"📺 {vid['author']}")
+                        st.link_button("▶️ Voir sur YouTube", vid['link'])
+                        st.markdown("---")
+            else:
+                st.info("Aucune vidéo trouvée via l'API.")
+    else:
+        st.info("💡 Pour activer la recherche interactive par API sans blocage, ajoute ta clé `YOUTUBE_API_KEY` dans les **Secrets** Streamlit Cloud.")
+
+    st.markdown("---")
+    st.subheader("⚡ Accès directs aux hubs de vidéos récentes (< 60 min)")
+    
+    # Raccourcis directs filtrés par durées et chaînes phares
+    hubs = {
+        "🎙️ Interviews & Anecdotes (Squeezie, Boxo, etc.)": "https://www.youtube.com/results?search_query=interview+anecdote+squeezie&sp=EgIQAw%253D%253D",
+        "💬 Talks & Débats Clivants (Hitchens, Lapierre)": "https://www.youtube.com/results?search_query=debat+societe+interview&sp=EgIQAw%253D%253D",
+        "🛋️ Format Podcast & Table Ronde": "https://www.youtube.com/results?search_query=podcast+invit%C3%A9+talk&sp=EgIQAw%253D%253D",
+        "🚀 Tops Vidéos du Moment France": "https://www.youtube.com/feed/trending"
     }
 
-    choix_cat = st.selectbox("Sélectionne un flux global :", list(categories_dict.keys()))
-    requete_reelle = categories_dict[choix_cat]
-
-    with st.spinner("Chargement massif des vidéos..."):
-        resultats_videos = recuperer_galerie_youtube(requete_reelle)
-
-    if resultats_videos:
-        st.success(f"⚡ {len(resultats_videos)} vidéos chargées ! Fais ton tri en masse :")
-        
-        # Affichage en grille de cartes visuelles (2 colonnes)
-        cols = st.columns(2)
-        for idx, vid in enumerate(resultats_videos):
-            col = cols[idx % 2]
-            with col:
-                st.image(vid['thumbnail'], use_column_width=True)
-                st.markdown(f"**{vid['title']}**")
-                st.caption(f"📺 {vid['author']}")
-                st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_vid_{idx}")
-                st.markdown("---")
-    else:
-        st.warning("⚠️ Impossible de charger le flux en direct. Utilise le lien direct ci-dessous :")
-        st.link_button("🌐 Ouvrir YouTube directement", "https://www.youtube.com/feed/trending", type="primary")
+    for titre, url in hubs.items():
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown(f"**{titre}**")
+        with col2:
+            st.link_button("Ouvrir", url)
