@@ -206,11 +206,11 @@ if uploaded_files:
             
             # --- TRAITEMENT STANDARD (RETABLI PROPREMENT) ---
             elif option == "Traitement Standard":
-nouvelle_duree = video.duration - 3
-try:
-    video_coupee = video.subclipped(0, nouvelle_duree) if nouvelle_duree > 0 else video
-except AttributeError:
-    video_coupee = video.subclip(0, nouvelle_duree) if nouvelle_duree > 0 else video
+                nouvelle_duree = video.duration - 3
+                try:
+                    video_coupee = video.subclipped(0, nouvelle_duree) if nouvelle_duree > 0 else video
+                except AttributeError:
+                    video_coupee = video.subclip(0, nouvelle_duree) if nouvelle_duree > 0 else video
                 
                 logo = ImageClip(chemin_logo).with_duration(video_coupee.duration).resized(width=200)
                 if os.path.exists(chemin_config):
@@ -226,7 +226,10 @@ except AttributeError:
             # --- TRAITEMENT AVEC RECADRAGE ---
             else: 
                 nouvelle_duree = video.duration - 3
-                video_coupee = video.subclipped(0, nouvelle_duree) if nouvelle_duree > 0 else video
+                try:
+                    video_coupee = video.subclipped(0, nouvelle_duree) if nouvelle_duree > 0 else video
+                except AttributeError:
+                    video_coupee = video.subclip(0, nouvelle_duree) if nouvelle_duree > 0 else video
                 largeur, hauteur = video_coupee.size
                 video_recadree = video_coupee.cropped(x1=0, y1=120, x2=largeur, y2=hauteur)
                 logo = ImageClip(chemin_logo).with_duration(video_recadree.duration).resized(width=150)
