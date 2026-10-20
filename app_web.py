@@ -111,26 +111,32 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de recherche globale multi-requêtes ciblée sur l'écosystème FR
-def recuperer_radar_global_robuste(api_key):
+# Fonction de récupération globale robuste par lots de créateurs
+def recuperer_miniatures_radar(api_key, mode_recent=True):
     toutes_les_videos = []
     
-    # Requêtes englobant directement tes créateurs et thématiques phares (15-30 ans)
-    requetes_cibles = [
-        "Squeezie", "Mastu", "Legend interview", "McFly Carlito", 
-        "Zack Nani", "Popcorn talk", "Alex Hitchens", "Inoxtag", 
-        "Amixem", "Vincent Lapierre", "Micode", "Underscore_"
+    # Écosystème élargi incluant tes demandes spécifiques (Squeezie, Mastu, Legend, Goldenboy, Alex Hitchens, Giuseppe, etc.)
+    createurs_cibles = [
+        "Squeezie", "Mastu", "Legend Guillaume Pley", "McFly Carlito", 
+        "Zack Nani", "Popcorn talk", "Alex Hitchens", "Goldenboy", 
+        "Giuseppe", "Inoxtag", "Amixem", "Vincent Lapierre", "Micode"
     ]
     
-    for req_str in requetes_cibles:
+    for createur in createurs_cibles:
         try:
-            query = urllib.parse.quote(req_str)
+            query = urllib.parse.quote(createur)
             url = (
                 f"https://www.googleapis.com/youtube/v3/search?part=snippet"
                 f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
-                f"&videoDuration=medium&maxResults=3&order=date&key={api_key}"
+                f"&videoDuration=medium&maxResults=2&key={api_key}"
             )
             
+            if mode_recent:
+                date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z"
+                url += f"&publishedAfter={date_limite}&order=date"
+            else:
+                url += "&order=viewCount"
+
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = json.loads(resp.read().decode())
@@ -143,15 +149,16 @@ def recuperer_radar_global_robuste(api_key):
                     "author": snippet["channelTitle"],
                     "link": f"https://www.youtube.com/watch?v={vid_id}",
                     "thumbnail": snippet["thumbnails"]["high"]["url"],
-                    "publish_time": snippet["publishTime"]
+                    "publish_time": snippet.get("publishTime", "")
                 })
         except Exception:
             continue
             
-    # Suppression des doublons et tri par date
+    # Dédoublonnage et tri
     videos_uniques = {v['link']: v for v in toutes_les_videos}.values()
     liste_finale = list(videos_uniques)
-    liste_finale.sort(key=lambda x: x["publish_time"], reverse=True)
+    if mode_recent:
+        liste_finale.sort(key=lambda x: x["publish_time"], reverse=True)
     return liste_finale
 
 # =========================================================================
@@ -381,30 +388,44 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR CULTURE JEUNE FR (VUE GLOBALE UNIFIÉE)
+# SECTION 2 : RADAR CULTURE JEUNE FR (GALERIE DE MINIATURES & ACTUALISATION)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Culture Jeune FR")
-    st.write("Flux global unifié combinant instantanément l'écosystème web français (Squeezie, Mastu, Alex Hitchens, Legend, Zack Nani, etc.).")
+    st.title("🔥 Radar Culture Jeune FR - Galerie Visuelle")
+    st.write("Galerie de miniatures officielles de l'écosystème web français. Utilise le bouton d'actualisation pour charger et voir plus de contenu.")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
-        if st.button("🚀 Charger le flux global des créateurs", type="primary"):
-            with st.spinner("Récupération de toutes les pépites de l'écosystème..."):
-                resultats = recuperer_radar_global_robuste(api_key)
+        # Options de filtre temporel
+        choix_periode = st.radio(
+            "Période des vidéos :",
+            ["⚡ Sorties Récentes (Moins de 7 jours)", "🏆 Best-Of Historique (Toutes les plus vues)"],
+            horizontal=True
+        )
+        mode_recent = True if "Récentes" in choix_periode else False
+
+        # Bouton d'actualisation / chargement
+        if st.button("🔄 Actualiser / Voir plus de miniatures", type="primary"):
+            with st.spinner("Chargement des miniatures de l'écosystème..."):
+                resultats = recuperer_miniatures_radar(api_key, mode_recent=mode_recent)
             
-            if resultats:
-                st.success(f"🎯 {len(resultats)} vidéos chargées avec succès !")
-                cols = st.columns(2)
-                for idx, vid in enumerate(resultats):
-                    with cols[idx % 2]:
-                        st.image(vid['thumbnail'], use_column_width=True)
-                        st.markdown(f"**{vid['title']}**")
-                        st.caption(f"📺 {vid['author']}")
-                        st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
-                        st.markdown("---")
-            else:
-                st.warning("Aucune vidéo trouvée. Vérifie ta clé API dans les secrets Streamlit.")
+            # Stockage en session state pour garder l'affichage actif
+            st.session_state['galerie_videos'] = resultats
+
+        # Affichage de la galerie si des vidéos sont chargées en mémoire
+        if 'galerie_videos' in st.session_state and st.session_state['galerie_videos']:
+            st.success(f"🖼️ {len(st.session_state['galerie_videos'])} miniatures affichées !")
+            cols = st.columns(2)
+            for idx, vid in enumerate(st.session_state['galerie_videos']):
+                with cols[idx % 2]:
+                    # Affichage pur de la miniature officielle YouTube
+                    st.image(vid['thumbnail'], use_column_width=True)
+                    st.markdown(f"**{vid['title']}**")
+                    st.caption(f"📺 {vid['author']}")
+                    st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_mini_{idx}")
+                    st.markdown("---")
+        else:
+            st.info("💡 Clique sur le bouton **🔄 Actualiser** ci-dessus pour afficher la galerie de miniatures.")
     else:
         st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable dans les Secrets de Streamlit Cloud.")
