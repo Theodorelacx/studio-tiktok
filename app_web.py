@@ -5,6 +5,8 @@ import cv2
 import numpy as np
 import streamlit as st
 from PIL import Image
+import urllib.request
+import xml.etree.ElementTree as ET
 
 # Import sécurisé de MoviePy pour compatibilité PC / Cloud
 try:
@@ -48,9 +50,12 @@ def couper_video(video, debut, fin):
 
 def redimensionner_image_clip(clip, width=None, height=None):
     try:
-        return clip.resized(width=width, height=height)
+        return clip.resized(width=width, height=height, apply_to=['mask'], resample='bicubic')
     except AttributeError:
-        return clip.resize(width=width, height=height)
+        try:
+            return clip.resize(width=width, height=height, apply_to=['mask'])
+        except:
+            return clip.resize(width=width, height=height)
 
 def definir_duree(clip, duree):
     try:
@@ -109,258 +114,335 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-st.title("🎬 Studio TikTok - Web & Mobile")
-st.write("Pilote ton studio de montage depuis ton PC ou ton téléphone !")
+# Fonction pour récupérer le flux RSS des tendances / recherches YouTube
+def recuperer_tendances_youtube(mot_cle=""):
+    try:
+        if mot_cle.strip():
+            query_encoded = urllib.parse.quote(mot_cle.strip())
+            url = f"https://www.youtube.com/feeds/videos.xml?search_query={query_encoded}"
+        else:
+            # Flux par défaut des tendances / actualités
+            url = "https://www.youtube.com/feeds/videos.xml?search_query=trending+shorts"
 
-# Menu de choix
-option = st.selectbox(
-    "Choisis ton mode de traitement :", 
-    ["Traitement Standard", "Traitement avec Recadrage", "Traitement reallift00n"]
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response:
+            xml_data = response.read()
+
+        root = ET.fromstring(xml_data)
+        ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015', 'media': 'http://search.yahoo.com/mrss/'}
+
+        videos = []
+        for entry in root.findall('atom:entry', ns):
+            title = entry.find('atom:title', ns).text
+            link = entry.find('atom:link', ns).attrib['href']
+            video_id = entry.find('yt:videoId', ns).text
+            author = entry.find('atom:author/atom:name', ns).text
+            thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+            
+            videos.append({
+                'title': title,
+                'link': link,
+                'author': author,
+                'thumbnail': thumbnail,
+                'video_id': video_id
+            })
+        return videos
+    except Exception as e:
+        return []
+
+# =========================================================================
+# NAVIGATION PRINCIPALE (MENU DE L'APPLICATION)
+# =========================================================================
+st.sidebar.title("📌 Menu Principal")
+section_principale = st.sidebar.radio(
+    "Que souhaites-tu faire ?",
+    ["🎬 Montage Vidéo", "🔥 Tendances YouTube"]
 )
 
-# Zone d'envoi des vidéos
-st.subheader("1. Sélectionne tes vidéos brutes")
-uploaded_files = st.file_uploader("Glisse ou sélectionne tes vidéos brutes (.mp4)", type=["mp4"], accept_multiple_files=True)
+# -------------------------------------------------------------------------
+# SECTION 1 : MONTAGE VIDÉO
+# -------------------------------------------------------------------------
+if section_principale == "🎬 Montage Vidéo":
+    st.title("🎬 Studio TikTok - Web & Mobile")
+    st.write("Pilote ton studio de montage depuis ton PC ou ton téléphone !")
 
-# Initialisation de la session state pour stocker les coordonnées du centre (Mode Standard)
-if "centre_x" not in st.session_state or "centre_y" not in st.session_state:
-    cx_def, cy_def = lire_coordonnees()
-    st.session_state.centre_x = cx_def
-    st.session_state.centre_y = cy_def
+    # Menu de choix de traitement
+    option = st.selectbox(
+        "Choisis ton mode de traitement :", 
+        ["Traitement Standard", "Traitement avec Recadrage", "Traitement reallift00n"]
+    )
 
-# Calage du Logo - Uniquement pour le Traitement Standard
-if uploaded_files and option == "Traitement Standard":
-    st.markdown("---")
-    st.subheader("2. Calage du Logo (Standard)")
-    
-    premiere_video = uploaded_files[0]
-    bytes_data = premiere_video.getvalue()
-    
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
-        tmp_file.write(bytes_data)
-        tmp_path = tmp_file.name
+    # Zone d'envoi des vidéos
+    st.subheader("1. Sélectionne tes vidéos brutes")
+    uploaded_files = st.file_uploader("Glisse ou sélectionne tes vidéos brutes (.mp4)", type=["mp4"], accept_multiple_files=True)
 
-    cap = cv2.VideoCapture(tmp_path)
-    ret, frame = cap.read()
-    cap.release()
-    
-    if os.path.exists(tmp_path):
-        try: os.remove(tmp_path)
-        except: pass
+    # Initialisation de la session state pour stocker les coordonnées du centre (Mode Standard)
+    if "centre_x" not in st.session_state or "centre_y" not in st.session_state:
+        cx_def, cy_def = lire_coordonnees()
+        st.session_state.centre_x = cx_def
+        st.session_state.centre_y = cy_def
 
-    if ret:
-        h_orig, w_orig = frame.shape[:2]
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        TAILLE_LOGO_STD = 200
-        rayon = int(TAILLE_LOGO_STD / 2)
+    # Calage du Logo - Uniquement pour le Traitement Standard
+    if uploaded_files and option == "Traitement Standard":
+        st.markdown("---")
+        st.subheader("2. Calage du Logo (Standard)")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.session_state.centre_x = st.slider("Centre X (Horizontal)", 0, w_orig, st.session_state.centre_x)
-        with col2:
-            st.session_state.centre_y = st.slider("Centre Y (Vertical)", 0, h_orig, st.session_state.centre_y)
-            
-        frame_apercu = frame_rgb.copy()
-        cv2.circle(frame_apercu, (st.session_state.centre_x, st.session_state.centre_y), rayon, (0, 255, 0), 4)
-        cv2.circle(frame_apercu, (st.session_state.centre_x, st.session_state.centre_y), 8, (255, 0, 0), -1)
-        st.image(Image.fromarray(frame_apercu), caption=f"Aperçu du Centre : X={st.session_state.centre_x}, Y={st.session_state.centre_y}", use_column_width=True)
-
-        with open(chemin_config, "w") as f:
-            f.write(f"{st.session_state.centre_x},{st.session_state.centre_y}")
-
-elif option == "Traitement reallift00n":
-    if not os.path.exists(chemin_logo2) and not os.path.exists(chemin_logo2.replace(".png", ".jpg")):
-        st.warning("⚠️ Attention : Le fichier `logo2.png` n'a pas été trouvé dans le dossier du projet.")
-
-# Section Lancement du montage
-if uploaded_files:
-    st.markdown("---")
-    st.subheader("3. Lancement du montage")
-    st.success(f"{len(uploaded_files)} vidéo(s) prête(s) à être traitée(s) !")
-    
-    if st.button("🚀 Lancer le montage ultra-rapide"):
-        barre_progression = st.progress(0)
-        statut_texte = st.empty()
+        premiere_video = uploaded_files[0]
+        bytes_data = premiere_video.getvalue()
         
-        total = len(uploaded_files)
-        for index, uploaded_file in enumerate(uploaded_files):
-            if option == "Traitement Standard":
-                dossier_destination = dossier_brutes_standard
-            elif option == "Traitement avec Recadrage":
-                dossier_destination = dossier_brutes_recadrage
-            else:
-                dossier_destination = dossier_brutes_reallift00n
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
+            tmp_file.write(bytes_data)
+            tmp_path = tmp_file.name
 
-            chemin_in = os.path.join(dossier_destination, uploaded_file.name)
-            
-            with open(chemin_in, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            
-            statut_texte.text(f"Montage optimisé de : {uploaded_file.name} ({index+1}/{total})...")
-            
-            nom_propre = os.path.splitext(uploaded_file.name)[0].replace("_", " ")
-            chemin_out = os.path.join(dossier_sortie, f"{nom_propre}.mp4")
-            
-            video = VideoFileClip(chemin_in)
-            
-            # --- TRAITEMENT REALLIFT00N ---
-            if option == "Traitement reallift00n":
-                video_traitee = video
-                
-                logo_brut = chemin_logo2
-                if not os.path.exists(logo_brut):
-                    logo_brut_jpg = chemin_logo2.replace(".png", ".jpg")
-                    if os.path.exists(logo_brut_jpg):
-                        logo_brut = logo_brut_jpg
-                    else:
-                        logo_brut = chemin_logo
-                
-                logo_file = obtenir_logo_detoure(logo_brut)
-                
-                duree_p1 = min(FIN_LOGO_1, video_traitee.duration)
-                coin_a_x = POS_A[0] - int(TAILLE_LOGO_REALLIFT00N / 2)
-                coin_a_y = POS_A[1] - int(TAILLE_LOGO_REALLIFT00N / 2)
-                
-                logo_p1_img = ImageClip(logo_file)
-                logo_p1_img = definir_duree(logo_p1_img, duree_p1)
-                logo_p1_res = redimensionner_image_clip(logo_p1_img, width=TAILLE_LOGO_REALLIFT00N)
-                logo_part1 = positionner_clip(logo_p1_res, (coin_a_x, coin_a_y))
-                
-                elements_composite = [video_traitee, logo_part1]
-                
-                if video_traitee.duration > DEBUT_LOGO_2:
-                    duree_p2 = video_traitee.duration - DEBUT_LOGO_2
-                    coin_b_x = POS_B[0] - int(TAILLE_LOGO_REALLIFT00N / 2)
-                    coin_b_y = POS_B[1] - int(TAILLE_LOGO_REALLIFT00N / 2)
-                    
-                    logo_p2_img = ImageClip(logo_file)
-                    logo_p2_img = definir_debut(logo_p2_img, DEBUT_LOGO_2)
-                    logo_p2_img = definir_duree(logo_p2_img, duree_p2)
-                    logo_p2_res = redimensionner_image_clip(logo_p2_img, width=TAILLE_LOGO_REALLIFT00N)
-                    logo_part2 = positionner_clip(logo_p2_res, (coin_b_x, coin_b_y))
-                    elements_composite.append(logo_part2)
-                
-                video_finale = CompositeVideoClip(elements_composite, size=video_traitee.size)
-            
-            # --- TRAITEMENT STANDARD ---
-            elif option == "Traitement Standard":
-                nouvelle_duree = video.duration - 3
-                video_coupee = couper_video(video, 0, nouvelle_duree)
-                
-                logo_img = ImageClip(chemin_logo)
-                logo_img = definir_duree(logo_img, video_coupee.duration)
-                logo_res = redimensionner_image_clip(logo_img, width=200)
+        cap = cv2.VideoCapture(tmp_path)
+        ret, frame = cap.read()
+        cap.release()
+        
+        if os.path.exists(tmp_path):
+            try: os.remove(tmp_path)
+            except: pass
 
-                if os.path.exists(chemin_config):
-                    with open(chemin_config, "r") as f:
-                        cx, cy = map(int, f.read().split(","))
-                        x_coin = cx - 100
-                        y_coin = cy - 100
+        if ret:
+            h_orig, w_orig = frame.shape[:2]
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            TAILLE_LOGO_STD = 200
+            rayon = int(TAILLE_LOGO_STD / 2)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.session_state.centre_x = st.slider("Centre X (Horizontal)", 0, w_orig, st.session_state.centre_x)
+            with col2:
+                st.session_state.centre_y = st.slider("Centre Y (Vertical)", 0, h_orig, st.session_state.centre_y)
+                
+            frame_apercu = frame_rgb.copy()
+            cv2.circle(frame_apercu, (st.session_state.centre_x, st.session_state.centre_y), rayon, (0, 255, 0), 4)
+            cv2.circle(frame_apercu, (st.session_state.centre_x, st.session_state.centre_y), 8, (255, 0, 0), -1)
+            st.image(Image.fromarray(frame_apercu), caption=f"Aperçu du Centre : X={st.session_state.centre_x}, Y={st.session_state.centre_y}", use_column_width=True)
+
+            with open(chemin_config, "w") as f:
+                f.write(f"{st.session_state.centre_x},{st.session_state.centre_y}")
+
+    elif option == "Traitement reallift00n":
+        if not os.path.exists(chemin_logo2) and not os.path.exists(chemin_logo2.replace(".png", ".jpg")):
+            st.warning("⚠️ Attention : Le fichier `logo2.png` n'a pas été trouvé dans le dossier du projet.")
+
+    # Section Lancement du montage
+    if uploaded_files:
+        st.markdown("---")
+        st.subheader("3. Lancement du montage")
+        st.success(f"{len(uploaded_files)} vidéo(s) prête(s) à être traitée(s) !")
+        
+        if st.button("🚀 Lancer le montage ultra-rapide"):
+            barre_progression = st.progress(0)
+            statut_texte = st.empty()
+            
+            total = len(uploaded_files)
+            for index, uploaded_file in enumerate(uploaded_files):
+                if option == "Traitement Standard":
+                    dossier_destination = dossier_brutes_standard
+                elif option == "Traitement avec Recadrage":
+                    dossier_destination = dossier_brutes_recadrage
                 else:
-                    x_coin, y_coin = 0, 0
-                
-                logo = positionner_clip(logo_res, (x_coin, y_coin))
-                video_finale = CompositeVideoClip([video_coupee, logo], size=video_coupee.size)
-            
-            # --- TRAITEMENT AVEC RECADRAGE ---
-            else: 
-                nouvelle_duree = video.duration - 3
-                video_coupee = couper_video(video, 0, nouvelle_duree)
-                
-                largeur, hauteur = video_coupee.size
-                video_recadree = rogner_video(video_coupee, 0, 120, largeur, hauteur)
-                
-                logo_img = ImageClip(chemin_logo)
-                logo_img = definir_duree(logo_img, video_recadree.duration)
-                logo_res = redimensionner_image_clip(logo_img, width=150)
-                logo = positionner_clip(logo_res, (20, 20))
-                
-                video_finale = CompositeVideoClip([video_recadree, logo], size=video_recadree.size)
-            
-            temp_audio = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
-            try:
-                video_finale.write_videofile(
-                    chemin_out, 
-                    fps=30, 
-                    codec='libx264', 
-                    audio_codec='aac', 
-                    bitrate='6000k', 
-                    preset='fast',
-                    threads=4,
-                    temp_audiofile=temp_audio, 
-                    logger=None
-                )
-            finally:
-                if os.path.exists(temp_audio):
-                    try: os.remove(temp_audio)
-                    except: pass
-            
-            video.close()
-            video_finale.close()
-            barre_progression.progress((index + 1) / total)
-            
-        st.success("🎉 Tous les montages sont terminés à vitesse maximale !")
+                    dossier_destination = dossier_brutes_reallift00n
 
-# Section de gestion et téléchargement des vidéos finales
-st.markdown("---")
-st.subheader("📥 Gestion des vidéos finales")
-fichiers_finaux = [f for f in os.listdir(dossier_sortie) if f.endswith(".mp4")]
+                chemin_in = os.path.join(dossier_destination, uploaded_file.name)
+                
+                with open(chemin_in, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                
+                statut_texte.text(f"Montage optimisé de : {uploaded_file.name} ({index+1}/{total})...")
+                
+                nom_propre = os.path.splitext(uploaded_file.name)[0].replace("_", " ")
+                chemin_out = os.path.join(dossier_sortie, f"{nom_propre}.mp4")
+                
+                video = VideoFileClip(chemin_in)
+                
+                # --- TRAITEMENT REALLIFT00N ---
+                if option == "Traitement reallift00n":
+                    video_traitee = video
+                    
+                    logo_brut = chemin_logo2
+                    if not os.path.exists(logo_brut):
+                        logo_brut_jpg = chemin_logo2.replace(".png", ".jpg")
+                        if os.path.exists(logo_brut_jpg):
+                            logo_brut = logo_brut_jpg
+                        else:
+                            logo_brut = chemin_logo
+                    
+                    logo_file = obtenir_logo_detoure(logo_brut)
+                    
+                    duree_p1 = min(FIN_LOGO_1, video_traitee.duration)
+                    coin_a_x = POS_A[0] - int(TAILLE_LOGO_REALLIFT00N / 2)
+                    coin_a_y = POS_A[1] - int(TAILLE_LOGO_REALLIFT00N / 2)
+                    
+                    logo_p1_img = ImageClip(logo_file)
+                    logo_p1_img = definir_duree(logo_p1_img, duree_p1)
+                    logo_p1_res = redimensionner_image_clip(logo_p1_img, width=TAILLE_LOGO_REALLIFT00N)
+                    logo_part1 = positionner_clip(logo_p1_res, (coin_a_x, coin_a_y))
+                    
+                    elements_composite = [video_traitee, logo_part1]
+                    
+                    if video_traitee.duration > DEBUT_LOGO_2:
+                        duree_p2 = video_traitee.duration - DEBUT_LOGO_2
+                        coin_b_x = POS_B[0] - int(TAILLE_LOGO_REALLIFT00N / 2)
+                        coin_b_y = POS_B[1] - int(TAILLE_LOGO_REALLIFT00N / 2)
+                        
+                        logo_p2_img = ImageClip(logo_file)
+                        logo_p2_img = definir_debut(logo_p2_img, DEBUT_LOGO_2)
+                        logo_p2_img = definir_duree(logo_p2_img, duree_p2)
+                        logo_p2_res = redimensionner_image_clip(logo_p2_img, width=TAILLE_LOGO_REALLIFT00N)
+                        logo_part2 = positionner_clip(logo_p2_res, (coin_b_x, coin_b_y))
+                        elements_composite.append(logo_part2)
+                    
+                    video_finale = CompositeVideoClip(elements_composite, size=video_traitee.size)
+                
+                # --- TRAITEMENT STANDARD ---
+                elif option == "Traitement Standard":
+                    nouvelle_duree = video.duration - 3
+                    video_coupee = couper_video(video, 0, nouvelle_duree)
+                    
+                    logo_img = ImageClip(chemin_logo)
+                    logo_img = definir_duree(logo_img, video_coupee.duration)
+                    logo_res = redimensionner_image_clip(logo_img, width=200)
 
-if fichiers_finaux:
-    st.write("Coche les vidéos que tu souhaites gérer :")
-    
-    fichiers_selectionnes = []
-    for f_fini in fichiers_finaux:
-        col_chk, col_dl = st.columns([4, 1])
-        with col_chk:
-            isSelected = st.checkbox(f"🎬 {f_fini}", key=f"chk_{f_fini}")
-            if isSelected:
-                fichiers_selectionnes.append(f_fini)
-        with col_dl:
-            chemin_f_fini = os.path.join(dossier_sortie, f_fini)
-            with open(chemin_f_fini, "rb") as fichier_ouvert:
-                st.download_button(label="📥", data=fichier_ouvert, file_name=f_fini, mime="video/mp4", key=f"dl_{f_fini}")
+                    if os.path.exists(chemin_config):
+                        with open(chemin_config, "r") as f:
+                            cx, cy = map(int, f.read().split(","))
+                            x_coin = cx - 100
+                            y_coin = cy - 100
+                    else:
+                        x_coin, y_coin = 0, 0
+                    
+                    logo = positionner_clip(logo_res, (x_coin, y_coin))
+                    video_finale = CompositeVideoClip([video_coupee, logo], size=video_coupee.size)
+                
+                # --- TRAITEMENT AVEC RECADRAGE ---
+                else: 
+                    nouvelle_duree = video.duration - 3
+                    video_coupee = couper_video(video, 0, nouvelle_duree)
+                    
+                    largeur, hauteur = video_coupee.size
+                    video_recadree = rogner_video(video_coupee, 0, 120, largeur, hauteur)
+                    
+                    logo_img = ImageClip(chemin_logo)
+                    logo_img = definir_duree(logo_img, video_recadree.duration)
+                    logo_res = redimensionner_image_clip(logo_img, width=150)
+                    logo = positionner_clip(logo_res, (20, 20))
+                    
+                    video_finale = CompositeVideoClip([video_recadree, logo], size=video_recadree.size)
+                
+                temp_audio = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
+                try:
+                    video_finale.write_videofile(
+                        chemin_out, 
+                        fps=30, 
+                        codec='libx264', 
+                        audio_codec='aac', 
+                        bitrate='10000k', 
+                        preset='medium',
+                        threads=4,
+                        temp_audiofile=temp_audio, 
+                        logger=None
+                    )
+                finally:
+                    if os.path.exists(temp_audio):
+                        try: os.remove(temp_audio)
+                        except: pass
+                
+                video.close()
+                video_finale.close()
+                barre_progression.progress((index + 1) / total)
+                
+            st.success("🎉 Tous les montages sont terminés à vitesse maximale !")
 
+    # Section de gestion et téléchargement des vidéos finales
     st.markdown("---")
-    
-    col_action1, col_action2 = st.columns(2)
-    
-    with col_action1:
-        if fichiers_selectionnes:
-            zip_path = os.path.join(dossier_actuel, "videos_selectionnees.zip")
-            with zipfile.ZipFile(zip_path, "w") as zipf:
-                for f_sel in fichiers_selectionnes:
-                    zipf.write(os.path.join(dossier_sortie, f_sel), arcname=f_sel)
-            
-            with open(zip_path, "rb") as z_file:
-                st.download_button(
-                    label=f"📦 Télécharger la sélection en ZIP ({len(fichiers_selectionnes)})",
-                    data=z_file,
-                    file_name="videos_tiktok_selection.zip",
-                    mime="application/zip",
-                    type="primary"
-                )
-        else:
-            st.info("Coche au moins une vidéo pour activer le téléchargement groupé.")
+    st.subheader("📥 Gestion des vidéos finales")
+    fichiers_finaux = [f for f in os.listdir(dossier_sortie) if f.endswith(".mp4")]
 
-    with col_action2:
-        if fichiers_selectionnes:
-            if st.button("🗑️ Supprimer la sélection", type="secondary"):
-                import gc
-                gc.collect()
-                for f_sel in fichiers_selectionnes:
-                    chemin_a_supprimer = os.path.join(dossier_sortie, f_sel)
-                    if os.path.exists(chemin_a_supprimer):
-                        try:
-                            os.remove(chemin_a_supprimer)
-                        except Exception as e:
+    if fichiers_finaux:
+        st.write("Coche les vidéos que tu souhaites gérer :")
+        
+        fichiers_selectionnes = []
+        for f_fini in fichiers_finaux:
+            col_chk, col_dl = st.columns([4, 1])
+            with col_chk:
+                isSelected = st.checkbox(f"🎬 {f_fini}", key=f"chk_{f_fini}")
+                if isSelected:
+                    fichiers_selectionnes.append(f_fini)
+            with col_dl:
+                chemin_f_fini = os.path.join(dossier_sortie, f_fini)
+                with open(chemin_f_fini, "rb") as fichier_ouvert:
+                    st.download_button(label="📥", data=fichier_ouvert, file_name=f_fini, mime="video/mp4", key=f"dl_{f_fini}")
+
+        st.markdown("---")
+        
+        col_action1, col_action2 = st.columns(2)
+        
+        with col_action1:
+            if fichiers_selectionnes:
+                zip_path = os.path.join(dossier_actuel, "videos_selectionnees.zip")
+                with zipfile.ZipFile(zip_path, "w") as zipf:
+                    for f_sel in fichiers_selectionnes:
+                        zipf.write(os.path.join(dossier_sortie, f_sel), arcname=f_sel)
+                
+                with open(zip_path, "rb") as z_file:
+                    st.download_button(
+                        label=f"📦 Télécharger la sélection en ZIP ({len(fichiers_selectionnes)})",
+                        data=z_file,
+                        file_name="videos_tiktok_selection.zip",
+                        mime="application/zip",
+                        type="primary"
+                    )
+            else:
+                st.info("Coche au moins une vidéo pour activer le téléchargement groupé.")
+
+        with col_action2:
+            if fichiers_selectionnes:
+                if st.button("🗑️ Supprimer la sélection", type="secondary"):
+                    import gc
+                    gc.collect()
+                    for f_sel in fichiers_selectionnes:
+                        chemin_a_supprimer = os.path.join(dossier_sortie, f_sel)
+                        if os.path.exists(chemin_a_supprimer):
                             try:
-                                os.chmod(chemin_a_supprimer, 0o777)
                                 os.remove(chemin_a_supprimer)
-                            except:
-                                st.error(f"Impossible de supprimer {f_sel} : le fichier est verrouillé.")
-                st.success("Opération de suppression terminée !")
-                st.rerun()
+                            except Exception as e:
+                                try:
+                                    os.chmod(chemin_a_supprimer, 0o777)
+                                    os.remove(chemin_a_supprimer)
+                                except:
+                                    st.error(f"Impossible de supprimer {f_sel} : le fichier est verrouillé.")
+                    st.success("Opération de suppression terminée !")
+                    st.rerun()
 
+    else:
+        st.info("Aucune vidéo finale pour le moment.")
+
+# -------------------------------------------------------------------------
+# SECTION 2 : TENDANCES YOUTUBE
+# -------------------------------------------------------------------------
 else:
-    st.info("Aucune vidéo finale pour le moment.")
+    st.title("🔥 Veille & Tendances YouTube")
+    st.write("Trouve de l'inspiration parmi les sujets et Shorts du moment pour tes prochains montages.")
+
+    recherche = st.text_input("🔍 Filtre par sujet ou mot-clé (ex: Shorts, Fitness, Humour, Tech...)", value="Shorts viral")
+    
+    with st.spinner("Récupération des vidéos tendances..."):
+        liste_videos = recuperer_tendances_youtube(recherche)
+
+    if liste_videos:
+        st.success(f"{len(liste_videos)} vidéos trouvées !")
+        
+        # Affichage sous forme de grille 2 colonnes
+        cols = st.columns(2)
+        for idx, vid in enumerate(liste_videos):
+            col = cols[idx % 2]
+            with col:
+                st.image(vid['thumbnail'], use_column_width=True)
+                st.markdown(f"**{vid['title']}**")
+                st.caption(f"📺 Chaîne : {vid['author']}")
+                st.link_button("▶️ Regarder sur YouTube", vid['link'])
+                st.markdown("---")
+    else:
+        st.warning("Aucune vidéo trouvée ou impossible de charger le flux YouTube pour le moment.")
