@@ -5,8 +5,11 @@ import cv2
 import numpy as np
 import streamlit as st
 from PIL import Image
-from moviepy import VideoFileClip, ImageClip, CompositeVideoClip
-
+try:
+    from moviepy import VideoFileClip, ImageClip, CompositeVideoClip
+except ImportError:
+    from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
+    
 # Configuration de la page web
 st.set_page_config(page_title="Studio TikTok Mobile", page_icon="🎬", layout="centered")
 
