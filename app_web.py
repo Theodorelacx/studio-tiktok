@@ -115,36 +115,41 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction sécurisée pour récupérer des vidéos via flux publics ciblés
+# Fonction de ratissage maximal avec filet de secours multi-termes
 def recuperer_galerie_youtube(requete):
-    try:
-        query_encoded = urllib.parse.quote(requete)
-        url = f"https://www.youtube.com/feeds/videos.xml?search_query={query_encoded}"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            xml_data = response.read()
+    mots_cles_a_tester = [requete, "video", "france", "tendance", "humour", "podcast"]
+    
+    for terme in mots_cles_a_tester:
+        try:
+            query_encoded = urllib.parse.quote(terme)
+            url = f"https://www.youtube.com/feeds/videos.xml?search_query={query_encoded}"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                xml_data = response.read()
 
-        root = ET.fromstring(xml_data)
-        ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
+            root = ET.fromstring(xml_data)
+            ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
 
-        videos = []
-        for entry in root.findall('atom:entry', ns):
-            title_node = entry.find('atom:title', ns)
-            link_node = entry.find('atom:link', ns)
-            id_node = entry.find('yt:videoId', ns)
-            author_node = entry.find('atom:author/atom:name', ns)
-            
-            if title_node is not None and link_node is not None and id_node is not None:
-                video_id = id_node.text
-                videos.append({
-                    'title': title_node.text,
-                    'link': link_node.attrib.get('href', f"https://www.youtube.com/watch?v={video_id}"),
-                    'author': author_node.text if author_node is not None else "YouTube Creator",
-                    'thumbnail': f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-                })
-        return videos
-    except Exception:
-        return []
+            videos = []
+            for entry in root.findall('atom:entry', ns):
+                title_node = entry.find('atom:title', ns)
+                link_node = entry.find('atom:link', ns)
+                id_node = entry.find('yt:videoId', ns)
+                author_node = entry.find('atom:author/atom:name', ns)
+                
+                if title_node is not None and link_node is not None and id_node is not None:
+                    video_id = id_node.text
+                    videos.append({
+                        'title': title_node.text,
+                        'link': link_node.attrib.get('href', f"https://www.youtube.com/watch?v={video_id}"),
+                        'author': author_node.text if author_node is not None else "YouTube Creator",
+                        'thumbnail': f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+                    })
+            if videos:
+                return videos
+        except Exception:
+            continue
+    return []
 
 # =========================================================================
 # NAVIGATION PRINCIPALE (MENU DE L'APPLICATION)
@@ -416,28 +421,28 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : TENDANCES YOUTUBE (GALERIE VISIBLE)
+# SECTION 2 : TENDANCES YOUTUBE (RATISSAGE ULTRA LARGE & TOPS)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar à Idées & Galerie YouTube")
-    st.write("Sélectionne une thématique ciblée pour afficher instantanément les miniatures et titres récents directement dans l'application.")
+    st.title("🔥 Radar Massif & Tendances YouTube")
+    st.write("Flux continu de vidéos récentes pour alimenter ta production quotidienne en masse.")
 
-    # Catégories intelligentes basées sur ta stratégie (Talks, Interviews, Débats, Anecdotes)
+    # Options ultra larges pour forcer l'affichage immédiat
     categories_dict = {
-        "🎙️ Interviews & Récits (Style Philippe Boxo / Légiste)": "interview histoire vraie affaire légiste",
-        "💬 Débats & Société (Style Alex Hitchens / Mascu / Clivant)": "débat société opinion clash",
-        "🛋️ Talk & Streaming assis (Style Squeezie / McFly / Mastu)": "podcast talk show interview",
-        "🔥 Shorts & Formats Viraux Récents": "shorts viral clash interview"
+        "🚀 Tendances & Tops France (Maximal)": "france",
+        "🔥 Actu & Buzz du moment": "actu",
+        "🎙️ Interviews & Talks Généraux": "interview",
+        "🍿 Divertissement Populaire": "divertissement"
     }
 
-    choix_cat = st.selectbox("Choisis ton vivier de recherche :", list(categories_dict.keys()))
+    choix_cat = st.selectbox("Sélectionne un flux global :", list(categories_dict.keys()))
     requete_reelle = categories_dict[choix_cat]
 
-    with st.spinner("Recherche des meilleures pépites en cours..."):
+    with st.spinner("Chargement massif des vidéos..."):
         resultats_videos = recuperer_galerie_youtube(requete_reelle)
 
     if resultats_videos:
-        st.success(f"{len(resultats_videos)} vidéos trouvées pour alimenter ton inspiration !")
+        st.success(f"⚡ {len(resultats_videos)} vidéos chargées ! Fais ton tri en masse :")
         
         # Affichage en grille de cartes visuelles (2 colonnes)
         cols = st.columns(2)
@@ -447,8 +452,8 @@ else:
                 st.image(vid['thumbnail'], use_column_width=True)
                 st.markdown(f"**{vid['title']}**")
                 st.caption(f"📺 {vid['author']}")
-                st.link_button("▶️ Voir la vidéo", vid['link'], key=f"btn_vid_{idx}")
+                st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_vid_{idx}")
                 st.markdown("---")
     else:
-        st.info("💡 Aucun résultat direct instantané avec ce mot-clé. Utilise le bouton ci-dessous pour ouvrir les tendances globales.")
-        st.link_button("🌐 Ouvrir YouTube Tendances", "https://www.youtube.com/feed/trending", type="primary")
+        st.warning("⚠️ Impossible de charger le flux en direct. Utilise le lien direct ci-dessous :")
+        st.link_button("🌐 Ouvrir YouTube directement", "https://www.youtube.com/feed/trending", type="primary")
