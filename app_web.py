@@ -8,6 +8,7 @@ from PIL import Image
 import urllib.request
 import urllib.parse
 import json
+from datetime import datetime, timedelta
 
 # Import sécurisé de MoviePy pour compatibilité PC / Cloud
 try:
@@ -35,14 +36,27 @@ for d in [dossier_brutes_standard, dossier_brutes_recadrage, dossier_brutes_real
 # -------------------------------------------------------------------------
 # PARAMÈTRES FINAUX REALLIFT00N (VERROUILLÉ ET INTACT)
 # -------------------------------------------------------------------------
-FIN_LOGO_1 = 5.97             # Le premier logo reste jusqu'à 5.97s
-DEBUT_LOGO_2 = 5.92           # Le second logo démarre dès 5.92s (chevauchement)
-TAILLE_LOGO_REALLIFT00N = 440 # Taille du logo reallift00n
-POS_A = (86, 610)             # Position 1 - X=86, Y=610
-POS_B = (485, 861)            # Position 2 - X=485, Y=861
+FIN_LOGO_1 = 5.97             
+DEBUT_LOGO_2 = 5.92           
+TAILLE_LOGO_REALLIFT00N = 440 
+POS_A = (86, 610)             
+POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
-# Fonctions utilitaires de compatibilité universelle MoviePy
+# LISTE ÉTENDUE DE ~50 CRÉATEURS PHARES FR (15-30 ans)
+CREATEURS_FR_PHARES = [
+    "Squeezie", "Mastu", "McFly et Carlito", "Amixem", "Le Grand JD", "Inoxtag", 
+    "Michou", "Joyca", "Theodort", "Popcorn", "Zack Nani", "Legend", "HugoDécrypte", 
+    "Louis San", "Gabaye", "Valouzz", "Lebouseuh", "Doigby", "FastGoodCuisine", 
+    "Jojol", "David Lafarge", "Thomas Gauthier", "ANIS", "Freddy Gladieux", 
+    "E_Riot", "Nota Bene", "C'est une autre histoire", "Brunof", "El Jj", 
+    "Lama Faché", "Dr Nozman", "DirtyBiology", "ScienceEtonnante", "Paradox", 
+    "Stardust", "Monsieur Bidouille", "Jamy - Epic", "Hugo Travers", "Elise Lucet", 
+    "Boulet", "Goulag", "Batflair", "Vincent Lapierre", "Alex Hitchens", "Goldenboy", 
+    "Philippe Boxo", "Micode", "Underscore_", "Sardoche", "Kameto", "Aminematue"
+]
+
+# Fonctions utilitaires MoviePy
 def couper_video(video, debut, fin):
     try:
         return video.subclipped(debut, fin) if fin > 0 else video
@@ -85,11 +99,9 @@ def rogner_video(video, x1, y1, x2, y2):
 def obtenir_logo_detoure(chemin_img):
     if not os.path.exists(chemin_img):
         return chemin_img
-        
     img = cv2.imread(chemin_img, cv2.IMREAD_UNCHANGED)
     if img is None:
         return chemin_img
-        
     if img.shape[2] == 3:
         b, g, r = cv2.split(img)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -97,7 +109,6 @@ def obtenir_logo_detoure(chemin_img):
         img_rgba = cv2.merge([b, g, r, alpha])
     else:
         img_rgba = img
-
     chemin_temp_propre = os.path.join(tempfile.gettempdir(), "logo_detoure.png")
     cv2.imwrite(chemin_temp_propre, img_rgba)
     return chemin_temp_propre
@@ -113,17 +124,26 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de recherche API : Triée par nombre de vues (Virale / Top France 15-30 ans)
-def chercher_videos_api(requete, api_key):
+# Fonction de recherche API stricte France + Filtre temporel (7 jours max ou illimité)
+def chercher_videos_api(requete, api_key, sans_limite_temps=False):
     try:
         query = urllib.parse.quote(requete)
-        # order=viewCount trie par les vidéos les plus vues de l'histoire/du sujet
-        # regionCode=FR & relevanceLanguage=fr ciblent le public jeune francophone
+        
+        # Base de l'URL obligatoire orientée France et langue française pour éliminer l'anglais
         url = (
             f"https://www.googleapis.com/youtube/v3/search?part=snippet"
             f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
-            f"&videoDuration=long&order=viewCount&maxResults=10&key={api_key}"
+            f"&videoDuration=long&maxResults=15&key={api_key}"
         )
+        
+        # Si on veut du très récent (< 1 semaine)
+        if not sans_limite_temps:
+            date_il_y_a_une_semaine = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z"
+            url += f"&publishedAfter={date_il_y_a_une_semaine}&order=date"
+        else:
+            # Pour la liste de référence : pas de limite de date, on prend les plus vues/pertinentes de ces créateurs
+            url += "&order=viewCount"
+
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
@@ -143,7 +163,7 @@ def chercher_videos_api(requete, api_key):
         return []
 
 # =========================================================================
-# NAVIGATION PRINCIPALE (MENU DE L'APPLICATION)
+# NAVIGATION PRINCIPALE
 # =========================================================================
 st.sidebar.title("📌 Menu Principal")
 section_principale = st.sidebar.radio(
@@ -174,7 +194,6 @@ if section_principale == "🎬 Montage Vidéo":
     if uploaded_files and option == "Traitement Standard":
         st.markdown("---")
         st.subheader("2. Calage du Logo (Standard)")
-        
         premiere_video = uploaded_files[0]
         bytes_data = premiere_video.getvalue()
         
@@ -185,7 +204,6 @@ if section_principale == "🎬 Montage Vidéo":
         cap = cv2.VideoCapture(tmp_path)
         ret, frame = cap.read()
         cap.release()
-        
         if os.path.exists(tmp_path):
             try: os.remove(tmp_path)
             except: pass
@@ -222,8 +240,8 @@ if section_principale == "🎬 Montage Vidéo":
         if st.button("🚀 Lancer le montage ultra-rapide"):
             barre_progression = st.progress(0)
             statut_texte = st.empty()
-            
             total = len(uploaded_files)
+            
             for index, uploaded_file in enumerate(uploaded_files):
                 if option == "Traitement Standard":
                     dossier_destination = dossier_brutes_standard
@@ -233,15 +251,12 @@ if section_principale == "🎬 Montage Vidéo":
                     dossier_destination = dossier_brutes_reallift00n
 
                 chemin_in = os.path.join(dossier_destination, uploaded_file.name)
-                
                 with open(chemin_in, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 
                 statut_texte.text(f"Montage optimisé de : {uploaded_file.name} ({index+1}/{total})...")
-                
                 nom_propre = os.path.splitext(uploaded_file.name)[0].replace("_", " ")
                 chemin_out = os.path.join(dossier_sortie, f"{nom_propre}.mp4")
-                
                 video = VideoFileClip(chemin_in)
                 
                 if option == "Traitement reallift00n":
@@ -263,14 +278,12 @@ if section_principale == "🎬 Montage Vidéo":
                     logo_p1_img = definir_duree(logo_p1_img, duree_p1)
                     logo_p1_res = redimensionner_image_clip(logo_p1_img, width=TAILLE_LOGO_REALLIFT00N)
                     logo_part1 = positionner_clip(logo_p1_res, (coin_a_x, coin_a_y))
-                    
                     elements_composite = [video_traitee, logo_part1]
                     
                     if video_traitee.duration > DEBUT_LOGO_2:
                         duree_p2 = video_traitee.duration - DEBUT_LOGO_2
                         coin_b_x = POS_B[0] - int(TAILLE_LOGO_REALLIFT00N / 2)
                         coin_b_y = POS_B[1] - int(TAILLE_LOGO_REALLIFT00N / 2)
-                        
                         logo_p2_img = ImageClip(logo_file)
                         logo_p2_img = definir_debut(logo_p2_img, DEBUT_LOGO_2)
                         logo_p2_img = definir_duree(logo_p2_img, duree_p2)
@@ -312,15 +325,8 @@ if section_principale == "🎬 Montage Vidéo":
                 temp_audio = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
                 try:
                     video_finale.write_videofile(
-                        chemin_out, 
-                        fps=30, 
-                        codec='libx264', 
-                        audio_codec='aac', 
-                        bitrate='10000k', 
-                        preset='medium',
-                        threads=4,
-                        temp_audiofile=temp_audio, 
-                        logger=None
+                        chemin_out, fps=30, codec='libx264', audio_codec='aac', 
+                        bitrate='10000k', preset='medium', threads=4, temp_audiofile=temp_audio, logger=None
                     )
                 finally:
                     if os.path.exists(temp_audio):
@@ -362,10 +368,7 @@ if section_principale == "🎬 Montage Vidéo":
                 with open(zip_path, "rb") as z_file:
                     st.download_button(
                         label=f"📦 Télécharger la sélection en ZIP ({len(fichiers_selectionnes)})",
-                        data=z_file,
-                        file_name="videos_tiktok_selection.zip",
-                        mime="application/zip",
-                        type="primary"
+                        data=z_file, file_name="videos_tiktok_selection.zip", mime="application/zip", type="primary"
                     )
             else:
                 st.info("Coche au moins une vidéo pour activer le téléchargement groupé.")
@@ -386,33 +389,41 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : TENDANCES YOUTUBE & RADAR VISUEL (TOPS VIRAUX 15-30 ANS)
+# SECTION 2 : TENDANCES YOUTUBE & RADAR VISUEL INTELLIGENT
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Tops Viraux France (15-30 ans)")
-    st.write("Affiche les vidéos les plus vues de France (podcasts, talks, interviews cultes) triées par vues totales.")
+    st.title("🔥 Radar Culture Jeune France & Veille")
+    st.write("Découvre les tendances récentes (< 7 jours) ou plonge dans la liste fixe de tes créateurs favoris de référence.")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
         categories_hubs = {
-            "🚀 Tops Hits YouTube FR (Squeezie, McFly & Carlito, Mastu)": "squeezie mcfly carlito mastu interview",
-            "🎙️ Interviews & Anecdotes Cultes (Boxo, Legend, Popcorn)": "interview anecdote vraie histoire",
-            "💬 Débats & Discussions Clivantes": "debat clash societe",
-            "🛋️ Talks & Podcasts Populaires (Zen, Zack Nani, Legend)": "podcast talk show"
+            "🚀 Tendances Générales FR (< 7 jours)": "interview divertissement",
+            "💬 Débats, Société & Clivant (< 7 jours)": "debat societe",
+            "🎙️ Podcasts & Entretiens Récents (< 7 jours)": "podcast interview",
+            "⭐ Chaînes de Référence (Liste Fixe / Sans limite de temps)": "REFERENCE_LISTE"
         }
 
-        choix_cat = st.selectbox("Choisis une thématique virale :", list(categories_hubs.keys()))
-        requete_automatique = categories_hubs[choix_cat]
+        choix_cat = st.selectbox("Choisis ton mode de veille :", list(categories_hubs.keys()))
+        
+        if choix_cat == "⭐ Chaînes de Référence (Liste Fixe / Sans limite de temps)":
+            st.info("💡 Mode liste fixe activé : recherche sans limite de temps parmi tes créateurs favoris (Squeezie, Mastu, Boxo, Vincent Lapierre, Legend, etc.)")
+            # Sélection aléatoire ou ciblée dans la liste des 50 créateurs pour ratisser large
+            createur_choisi = st.selectbox("Choisis un créateur de la liste :", CREATEURS_FR_PHARES)
+            mots_recherche = f"{createur_choisi} interview podcast"
+            sans_limite = True
+        else:
+            requete_automatique = categories_hubs[choix_cat]
+            mots_recherche = st.text_input("🔍 Affiner la recherche :", value=requete_automatique)
+            sans_limite = False
 
-        mots_recherche = st.text_input("🔍 Ou cherche un créateur / concept spécifique :", value=requete_automatique)
-
-        if st.button("🚀 Afficher les plus gros cartons", type="primary"):
-            with st.spinner("Recherche des vidéos francophones les plus vues..."):
-                resultats = chercher_videos_api(mots_recherche, api_key)
+        if st.button("🚀 Charger la galerie visuelle", type="primary"):
+            with st.spinner("Analyse et récupération des pépites françaises..."):
+                resultats = chercher_videos_api(mots_recherche, api_key, sans_limite_temps=sans_limite)
             
             if resultats:
-                st.success(f"{len(resultats)} vidéos très populaires chargées !")
+                st.success(f"🎯 {len(resultats)} vidéos chargées avec succès !")
                 cols = st.columns(2)
                 for idx, vid in enumerate(resultats):
                     with cols[idx % 2]:
@@ -422,6 +433,6 @@ else:
                         st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
                         st.markdown("---")
             else:
-                st.warning("Aucune vidéo trouvée. Essaie avec des mots-clés plus généraux.")
+                st.warning("Aucune vidéo trouvée avec ces critères stricts. Essaie un autre créateur ou élargis la recherche.")
     else:
         st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable. Configure-la dans les Secrets de Streamlit Cloud pour afficher la galerie.")
