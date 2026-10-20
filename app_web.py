@@ -113,11 +113,11 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction pour chercher des vidéos via l'API YouTube officielle
+# Fonction de recherche API : France (FR) + Formats longs (20 à 60 min)
 def chercher_videos_api(requete, api_key):
     try:
         query = urllib.parse.quote(requete)
-        url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&videoDuration=medium&maxResults=10&order=date&key={api_key}"
+        url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={query}&type=video&regionCode=FR&videoDuration=long&maxResults=10&order=date&key={api_key}"
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
@@ -380,47 +380,42 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : TENDANCES YOUTUBE (AVEC RACCOURCIS UNIVERSELS)
+# SECTION 2 : TENDANCES YOUTUBE & RADAR VISUEL
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Veille & Sources de Contenu YouTube")
-    st.write("Retrouve rapidement les vidéos des plus grands créateurs de France pour alimenter tes montages.")
+    st.title("🔥 Radar à Idées & Veille YouTube")
+    st.write("Sélectionne une thématique ou cherche directement des contenus français de 20 à 60 minutes.")
 
-    # Détection de la clé d'API Streamlit Secrets
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
-        mots_recherche = st.text_input("🔍 Recherche ciblée :", "Squeezie interview")
-        if st.button("Chercher"):
-            resultats = chercher_videos_api(mots_recherche, api_key)
+        categories_hubs = {
+            "🎙️ Interviews & Récits / Anecdotes": "interview histoire vraie",
+            "💬 Talks & Débats Clivants / Société": "debat societe",
+            "🛋️ Podcasts & Formats Assis": "podcast interview",
+            "🚀 Divertissement Populaire (Squeezie, Mastu...)": "divertissement interview"
+        }
+
+        choix_cat = st.selectbox("Choisis une thématique de veille :", list(categories_hubs.keys()))
+        requete_automatique = categories_hubs[choix_cat]
+
+        mots_recherche = st.text_input("🔍 Ou affine ta recherche personnalisée :", value=requete_automatique)
+
+        if st.button("🚀 Charger la galerie visuelle", type="primary"):
+            with st.spinner("Recherche des meilleures vidéos françaises (20 à 60 min)..."):
+                resultats = chercher_videos_api(mots_recherche, api_key)
+            
             if resultats:
+                st.success(f"{len(resultats)} vidéos chargées avec succès !")
                 cols = st.columns(2)
                 for idx, vid in enumerate(resultats):
                     with cols[idx % 2]:
                         st.image(vid['thumbnail'], use_column_width=True)
                         st.markdown(f"**{vid['title']}**")
                         st.caption(f"📺 {vid['author']}")
-                        st.link_button("▶️ Voir sur YouTube", vid['link'])
+                        st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
                         st.markdown("---")
             else:
-                st.info("Aucune vidéo trouvée via l'API.")
+                st.warning("Aucune vidéo trouvée avec ces critères stricts. Essaie d'élargir les mots-clés.")
     else:
-        st.info("💡 Pour activer la recherche interactive par API sans blocage, ajoute ta clé `YOUTUBE_API_KEY` dans les **Secrets** Streamlit Cloud.")
-
-    st.markdown("---")
-    st.subheader("⚡ Accès directs aux hubs de vidéos récentes (< 60 min)")
-    
-    # Raccourcis directs filtrés par durées et chaînes phares
-    hubs = {
-        "🎙️ Interviews & Anecdotes (Squeezie, Boxo, etc.)": "https://www.youtube.com/results?search_query=interview+anecdote+squeezie&sp=EgIQAw%253D%253D",
-        "💬 Talks & Débats Clivants (Hitchens, Lapierre)": "https://www.youtube.com/results?search_query=debat+societe+interview&sp=EgIQAw%253D%253D",
-        "🛋️ Format Podcast & Table Ronde": "https://www.youtube.com/results?search_query=podcast+invit%C3%A9+talk&sp=EgIQAw%253D%253D",
-        "🚀 Tops Vidéos du Moment France": "https://www.youtube.com/feed/trending"
-    }
-
-    for titre, url in hubs.items():
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.markdown(f"**{titre}**")
-        with col2:
-            st.link_button("Ouvrir", url)
+        st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable. Configure-la dans les Secrets de Streamlit Cloud pour afficher les miniatures.")
