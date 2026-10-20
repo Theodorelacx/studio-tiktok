@@ -7,7 +7,8 @@ import streamlit as st
 from PIL import Image
 import urllib.request
 import urllib.parse
-import xml.etree.ElementTree as ET
+import json
+from datetime import datetime, timedelta
 
 # Import sécurisé de MoviePy pour compatibilité PC / Cloud
 try:
@@ -41,13 +42,6 @@ TAILLE_LOGO_REALLIFT00N = 440
 POS_A = (86, 610)             
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
-
-# LISTE ÉTENDUE DE VOS CRÉATEURS PHARES FR (15-30 ANS) POUR LE RADAR
-CREATEURS_RADAR = [
-    "Squeezie", "Mastu", "McFly et Carlito", "Amixem", "Legend Guillaume Pley", 
-    "Zack Nani", "Popcorn", "HugoDécrypte", "Inoxtag", "Michou", "Joyca", 
-    "Theodort", "Valouzz", "Lebouseuh", "Doigby", "FastGoodCuisine", "Vincent Lapierre"
-]
 
 # Fonctions utilitaires MoviePy
 def couper_video(video, debut, fin):
@@ -117,47 +111,40 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de ratissage global ultra-rapide par mots-clés ciblés sur les créateurs FR
-def recuperer_flux_createurs():
-    toutes_les_videos = []
-    
-    # On ratisse sur les créateurs et leurs formats phares français
-    termes_cibles = [
-        "Squeezie interview", "Mastu", "McFly Carlito", "Legend interview", 
-        "Zack Nani", "Popcorn talk", "Inoxtag", "Amixem", "Vincent Lapierre debat"
-    ]
-    
-    for terme in termes_cibles:
-        try:
-            query_encoded = urllib.parse.quote(terme)
-            url = f"https://www.youtube.com/feeds/videos.xml?search_query={query_encoded}"
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=4) as response:
-                xml_data = response.read()
+# Fonction de recherche globale unifiée via l'API YouTube Data v3
+def chercher_videos_api_globale(requete, api_key, sans_limite_temps=False):
+    try:
+        query = urllib.parse.quote(requete)
+        # videoDuration=medium (capture à partir de 4/20 min) + regionCode=FR + relevanceLanguage=fr
+        url = (
+            f"https://www.googleapis.com/youtube/v3/search?part=snippet"
+            f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
+            f"&videoDuration=medium&maxResults=10&key={api_key}"
+        )
+        
+        if not sans_limite_temps:
+            date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z"
+            url += f"&publishedAfter={date_limite}&order=date"
+        else:
+            url += "&order=viewCount"
 
-            root = ET.fromstring(xml_data)
-            ns = {'atom': 'http://www.w3.org/2005/Atom', 'yt': 'http://www.youtube.com/xml/schemas/2015'}
-
-            for entry in root.findall('atom:entry', ns):
-                title_node = entry.find('atom:title', ns)
-                link_node = entry.find('atom:link', ns)
-                id_node = entry.find('yt:videoId', ns)
-                author_node = entry.find('atom:author/atom:name', ns)
-                
-                if title_node is not None and link_node is not None and id_node is not None:
-                    video_id = id_node.text
-                    toutes_les_videos.append({
-                        'title': title_node.text,
-                        'link': link_node.attrib.get('href', f"https://www.youtube.com/watch?v={video_id}"),
-                        'author': author_node.text if author_node is not None else "Créateur FR",
-                        'thumbnail': f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-                    })
-        except Exception:
-            continue
-            
-    # Dédoublonnage par lien
-    videos_uniques = {v['link']: v for v in toutes_les_videos}.values()
-    return list(videos_uniques)
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+        
+        videos = []
+        for item in data.get("items", []):
+            vid_id = item["id"]["videoId"]
+            snippet = item["snippet"]
+            videos.append({
+                "title": snippet["title"],
+                "author": snippet["channelTitle"],
+                "link": f"https://www.youtube.com/watch?v={vid_id}",
+                "thumbnail": snippet["thumbnails"]["high"]["url"]
+            })
+        return videos
+    except Exception as e:
+        return []
 
 # =========================================================================
 # NAVIGATION PRINCIPALE
@@ -386,25 +373,46 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR CULTURE JEUNE FR (FLUX GLOBAL UNIFIÉ)
+# SECTION 2 : RADAR CULTURE JEUNE FR (VUE GLOBALE API YOUTUBE)
 # -------------------------------------------------------------------------
 else:
     st.title("🔥 Radar Culture Jeune FR")
-    st.write("Flux instantané et unifié des dernières vidéos de l'écosystème web français (Squeezie, Mastu, Legend, etc.).")
+    st.write("Veille globale et unifiée de l'écosystème web français (Squeezie, Mastu, Legend, Popcorn, etc.) via la clé API officielle.")
 
-    if st.button("🚀 Afficher le flux global des créateurs", type="primary"):
-        with st.spinner("Récupération des flux de l'écosystème français..."):
-            resultats = recuperer_flux_createurs()
-        
-        if resultats:
-            st.success(f"🎯 {len(resultats)} vidéos chargées avec succès !")
-            cols = st.columns(2)
-            for idx, vid in enumerate(resultats):
-                with cols[idx % 2]:
-                    st.image(vid['thumbnail'], use_column_width=True)
-                    st.markdown(f"**{vid['title']}**")
-                    st.caption(f"📺 {vid['author']}")
-                    st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
-                    st.markdown("---")
-        else:
-            st.warning("Impossible de charger les flux pour le moment. Réessaie dans un instant.")
+    api_key = st.secrets.get("YOUTUBE_API_KEY", "")
+
+    if api_key:
+        # Menus thématiques et mots-clés englobant tout l'écosystème
+        categories_hub = {
+            "🚀 Écosystème Global (Squeezie, Mastu, Inoxtag...)": "squeezie mastu inoxtag interview",
+            "🎙️ Podcasts & Entretiens Cultes (Legend, Popcorn, Zack Nani...)": "legend podcast zack nani interview",
+            "💬 Débats & Actualité Société": "debat societe hugo decrypte"
+        }
+
+        choix_cat = st.selectbox("Choisis une thématique de veille :", list(categories_hub.keys()))
+        requete_defaut = categories_hub[choix_cat]
+
+        mots_recherche = st.text_input("🔍 Affiner la recherche :", value=requete_defaut)
+
+        col_b1, col_b2 = st.columns(2)
+        with col_b1:
+            mode_recent = st.checkbox("⚡ Sorties récentes (< 7 jours)", value=True)
+
+        if st.button("🚀 Charger la galerie globale", type="primary"):
+            with st.spinner("Interrogation de l'API YouTube..."):
+                resultats = chercher_videos_api_globale(mots_recherche, api_key, sans_limite_temps=not mode_recent)
+            
+            if resultats:
+                st.success(f"🎯 {len(resultats)} vidéos chargées avec succès !")
+                cols = st.columns(2)
+                for idx, vid in enumerate(resultats):
+                    with cols[idx % 2]:
+                        st.image(vid['thumbnail'], use_column_width=True)
+                        st.markdown(f"**{vid['title']}**")
+                        st.caption(f"📺 {vid['author']}")
+                        st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
+                        st.markdown("---")
+            else:
+                st.warning("Aucune vidéo trouvée avec ces critères. Essaie d'élargir les mots-clés.")
+    else:
+        st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable dans les Secrets de Streamlit Cloud.")
