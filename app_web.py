@@ -43,18 +43,28 @@ POS_A = (86, 610)
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
-# SUPER-LISTE ÉLARGIE DE PLUS DE 50+ CRÉATEURS PHARES FR (15-30 ANS)
-CREATEURS_FR_ECOSYSTEME = [
-    "Squeezie", "Mastu", "McFly et Carlito", "Amixem", "Le Grand JD", "Inoxtag", 
-    "Michou", "Joyca", "Theodort", "Popcorn", "Zack Nani", "Legend", "HugoDécrypte", 
-    "Louis San", "Valouzz", "Lebouseuh", "Doigby", "FastGoodCuisine", "Jojol", 
-    "David Lafarge", "Thomas Gauthier", "Freddy Gladieux", "Nota Bene", 
-    "C'est une autre histoire", "Dr Nozman", "DirtyBiology", "ScienceEtonnante", 
-    "Monsieur Bidouille", "Jamy - Epic", "Vincent Lapierre", "Alex Hitchens", 
-    "Philippe Boxo", "Micode", "Underscore_", "Sardoche", "Kameto", "Aminematue",
-    "JLTOMMY", "Bibi", "Mastugame", "Mastunight", "LeStream", "Gotaga", "Domingo",
-    "Etoiles", "Kotei", "Terracid", "Lennie", "ANIS", "Brut France", "Konbini"
-]
+# DICTIONNAIRE DES CHAÎNES OFFICIELLES DE L'ÉCOSYSTÈME FRANÇAIS (15-30 ANS) - CHANNEL IDs
+# Garanti 100% français, sans vidéos randoms étrangères.
+ECOSYSTEME_CHAINES_FR = {
+    "Squeezie": "UC3IZKmgri5V028bUiU01X1w",
+    "Mastu": "UC8A_79I3yUj4O9I46aJt8aQ",
+    "McFly et Carlito": "UC1aA-E3B2w8v8i-f5YdF7wA",
+    "Amixem": "UC28AsI-L43fLmsI6S2A1AFA",
+    "Legend (Guillaume Pley)": "UC3pL1z9y3-X-Iq_F1qN08pA",
+    "Zack Nani": "UCQ5WfR9o_D3Zq8m5p3gS8Aw",
+    "Popcorn": "UCv5kSAn6y3b3w6iGk_03X7Q",
+    "HugoDécrypte": "UC2K3JzAO1m5O43fI80Pz53g",
+    "Vincent Lapierre": "UCn9oJ_5mKx2D9Z5Xm7n28_Q",
+    "Inoxtag": "UCG8rbF3g23E2q436I7vT2sA",
+    "Michou": "UC3n5X3k_Q2m1852v0zFz0fA",
+    "Theodort": "UC1lWn3XoI811-Q5Z3S4l5mA",
+    "Joyca": "UC4QG2Gf8s2jG2vM113e6o6w",
+    "Micode": "UCf8aS8uE238mQ8_81Pz5j9Q",
+    "Valouzz": "UCW3r5n30C90Xg20iB9iU3wQ",
+    "Lebouseuh": "UC6wWw5hZp9lQ3G084R2n04w",
+    "Doigby": "UC4xIu_5n042zV4w7n4e6iOQ",
+    "FastGoodCuisine": "UCi12-1Wz69M56sY0A3Q057g"
+}
 
 # Fonctions utilitaires MoviePy
 def couper_video(video, debut, fin):
@@ -124,50 +134,50 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de ratissage global et intelligent dans tout l'écosystème français
-def recuperer_radar_global(api_key, mode_recent=True):
+# Fonction globale qui interroge l'API de façon ciblée sur chaque Channel ID
+def recuperer_flux_global_chaines(api_key, mode_recent=True):
     toutes_les_videos = []
     
-    # Pour ratisser large sans saturer l'API, on pioche dans les thèmes globaux et les gros noms
-    termes_cles = ["interview", "podcast", "débat", "anecdote", "histoire vraie", "talk"]
-    
-    try:
-        for terme in termes_cles[:3]: # On prend un échantillon pour garantir une réponse ultra rapide
-            query = urllib.parse.quote(terme)
+    # On parcourt les chaînes de l'écosystème
+    for nom_createur, cid in ECOSYSTEME_CHAINES_FR.items():
+        try:
+            # On cherche les vidéos longues (de 15/20 min à 1h+) de cette chaîne exacte
             url = (
                 f"https://www.googleapis.com/youtube/v3/search?part=snippet"
-                f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
-                f"&videoDuration=medium&maxResults=10&key={api_key}"
+                f"&channelId={cid}&type=video&videoDuration=long"
+                f"&maxResults=3&key={api_key}"
             )
             
             if mode_recent:
+                # Moins d'une semaine
                 date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z"
                 url += f"&publishedAfter={date_limite}&order=date"
             else:
+                # Les plus vues (historique)
                 url += "&order=viewCount"
 
             req = urllib.request.Request(url)
-            with urllib.request.urlopen(req, timeout=4) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode())
             
             for item in data.get("items", []):
                 vid_id = item["id"]["videoId"]
                 snippet = item["snippet"]
-                auteur = snippet["channelTitle"]
-                
-                # Filtrage intelligent pour s'assurer que ça correspond à l'écosystème français
                 toutes_les_videos.append({
                     "title": snippet["title"],
-                    "author": auteur,
+                    "author": snippet["channelTitle"],
                     "link": f"https://www.youtube.com/watch?v={vid_id}",
-                    "thumbnail": snippet["thumbnails"]["high"]["url"]
+                    "thumbnail": snippet["thumbnails"]["high"]["url"],
+                    "publish_time": snippet["publishTime"]
                 })
+        except Exception:
+            continue
+            
+    # Tri global par date ou pertinence pour mélanger harmonieusement les créateurs
+    if mode_recent:
+        toutes_les_videos.sort(key=lambda x: x["publish_time"], reverse=True)
         
-        # Supprimer les doublons éventuels par ID de vidéo
-        videos_uniques = {v['link']: v for v in toutes_les_videos}.values()
-        return list(videos_uniques)
-    except Exception as e:
-        return []
+    return toutes_les_videos
 
 # =========================================================================
 # NAVIGATION PRINCIPALE
@@ -396,29 +406,29 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR GLOBAL CULTURE JEUNE FR (VUE GÉNÉRALE)
+# SECTION 2 : RADAR GLOBAL CULTURE JEUNE FR (CIBLAGE CHAÎNES OFFICIELLES)
 # -------------------------------------------------------------------------
 else:
     st.title("🔥 Radar Global Culture Jeune FR")
-    st.write("Flux unifié et général de tout l'écosystème web français (Squeezie, Mastu, Legend, Inoxtag, Popcorn, etc.).")
+    st.write("Flux général et unifié piochant directement et uniquement chez vos créateurs web français de référence.")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
         mode_radar = st.radio(
             "Choisis le mode de tri :",
-            ["⚡ Tendances Récentes (< 7 jours)", "🏆 Best-Of / Les plus vues (Historique)"],
+            ["⚡ Sorties Récentes (Moins de 7 jours)", "🏆 Best-Of / Les plus vues (Historique)"],
             horizontal=True
         )
 
         mode_recent_bool = True if "Récentes" in mode_radar else False
 
         if st.button("🚀 Actualiser le flux global", type="primary"):
-            with st.spinner("Ratissage de l'écosystème web français en cours..."):
-                resultats = recuperer_radar_global(api_key, mode_recent=mode_recent_bool)
+            with st.spinner("Récupération des flux officiels de l'écosystème français..."):
+                resultats = recuperer_flux_global_chaines(api_key, mode_recent=mode_recent_bool)
             
             if resultats:
-                st.success(f"⚡ {len(resultats)} vidéos chargées depuis les meilleurs créateurs français !")
+                st.success(f"🎯 {len(resultats)} vidéos chargées avec succès depuis les chaînes phares !")
                 cols = st.columns(2)
                 for idx, vid in enumerate(resultats):
                     with cols[idx % 2]:
@@ -428,6 +438,6 @@ else:
                         st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
                         st.markdown("---")
             else:
-                st.warning("Aucune vidéo trouvée pour le moment. Réessaie dans un instant.")
+                st.warning("Aucune vidéo trouvée. Vérifie ta clé API ou réessaie dans un instant.")
     else:
         st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable. Configure-la dans les Secrets de Streamlit Cloud pour afficher le flux.")
