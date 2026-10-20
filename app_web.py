@@ -39,6 +39,43 @@ POS_A = (86, 610)             # Position 1 - X=86, Y=610
 POS_B = (485, 861)            # Position 2 - X=485, Y=861
 # -------------------------------------------------------------------------
 
+# Fonctions utilitaires de compatibilité universelle MoviePy (v1 vs v2)
+def couper_video(video, debut, fin):
+    try:
+        return video.subclipped(debut, fin) if fin > 0 else video
+    except AttributeError:
+        return video.subclip(debut, fin) if fin > 0 else video
+
+def redimensionner_image_clip(clip, width=None, height=None):
+    try:
+        return clip.resized(width=width, height=height)
+    except AttributeError:
+        return clip.resize(width=width, height=height)
+
+def definir_duree(clip, duree):
+    try:
+        return clip.with_duration(duree)
+    except AttributeError:
+        return clip.set_duration(duree)
+
+def definir_debut(clip, debut):
+    try:
+        return clip.with_start(debut)
+    except AttributeError:
+        return clip.set_start(debut)
+
+def positionner_clip(clip, pos):
+    try:
+        return clip.with_position(pos)
+    except AttributeError:
+        return clip.set_position(pos)
+
+def rogner_video(video, x1, y1, x2, y2):
+    try:
+        return video.cropped(x1=x1, y1=y1, x2=x2, y2=y2)
+    except AttributeError:
+        return video.crop(x1=x1, y1=y1, x2=x2, y2=y2)
+
 # Fonction pour transformer le fond noir en transparence (détourage parfait)
 def obtenir_logo_detoure(chemin_img):
     if not os.path.exists(chemin_img):
@@ -59,13 +96,6 @@ def obtenir_logo_detoure(chemin_img):
     chemin_temp_propre = os.path.join(tempfile.gettempdir(), "logo_detoure.png")
     cv2.imwrite(chemin_temp_propre, img_rgba)
     return chemin_temp_propre
-
-# Fonction pour redimensionner un clip d'image de façon robuste (compatible resized / resize)
-def redimensionner_image_clip(clip, width=None, height=None):
-    try:
-        return clip.resized(width=width, height=height)
-    except AttributeError:
-        return clip.resize(width=width, height=height)
 
 # Fonction pour lire config.txt (pour le mode Standard)
 def lire_coordonnees():
@@ -191,8 +221,10 @@ if uploaded_files:
                 coin_a_x = POS_A[0] - int(TAILLE_LOGO_REALLIFT00N / 2)
                 coin_a_y = POS_A[1] - int(TAILLE_LOGO_REALLIFT00N / 2)
                 
-                logo_part1_img = ImageClip(logo_file).with_duration(duree_p1)
-                logo_part1 = redimensionner_image_clip(logo_part1_img, width=TAILLE_LOGO_REALLIFT00N).with_position((coin_a_x, coin_a_y))
+                logo_p1_img = ImageClip(logo_file)
+                logo_p1_img = definir_duree(logo_p1_img, duree_p1)
+                logo_p1_res = redimensionner_image_clip(logo_p1_img, width=TAILLE_LOGO_REALLIFT00N)
+                logo_part1 = positionner_clip(logo_p1_res, (coin_a_x, coin_a_y))
                 
                 elements_composite = [video_traitee, logo_part1]
                 
@@ -201,8 +233,11 @@ if uploaded_files:
                     coin_b_x = POS_B[0] - int(TAILLE_LOGO_REALLIFT00N / 2)
                     coin_b_y = POS_B[1] - int(TAILLE_LOGO_REALLIFT00N / 2)
                     
-                    logo_part2_img = ImageClip(logo_file).with_start(DEBUT_LOGO_2).with_duration(duree_p2)
-                    logo_part2 = redimensionner_image_clip(logo_part2_img, width=TAILLE_LOGO_REALLIFT00N).with_position((coin_b_x, coin_b_y))
+                    logo_p2_img = ImageClip(logo_file)
+                    logo_p2_img = definir_debut(logo_p2_img, DEBUT_LOGO_2)
+                    logo_p2_img = definir_duree(logo_p2_img, duree_p2)
+                    logo_p2_res = redimensionner_image_clip(logo_p2_img, width=TAILLE_LOGO_REALLIFT00N)
+                    logo_part2 = positionner_clip(logo_p2_res, (coin_b_x, coin_b_y))
                     elements_composite.append(logo_part2)
                 
                 video_finale = CompositeVideoClip(elements_composite, size=video_traitee.size)
@@ -210,13 +245,11 @@ if uploaded_files:
             # --- TRAITEMENT STANDARD ---
             elif option == "Traitement Standard":
                 nouvelle_duree = video.duration - 3
-                try:
-                    video_coupee = video.subclipped(0, nouvelle_duree) if nouvelle_duree > 0 else video
-                except AttributeError:
-                    video_coupee = video.subclip(0, nouvelle_duree) if nouvelle_duree > 0 else video
+                video_coupee = couper_video(video, 0, nouvelle_duree)
                 
-                logo_img = ImageClip(chemin_logo).with_duration(video_coupee.duration)
-                logo = redimensionner_image_clip(logo_img, width=200)
+                logo_img = ImageClip(chemin_logo)
+                logo_img = definir_duree(logo_img, video_coupee.duration)
+                logo_res = redimensionner_image_clip(logo_img, width=200)
 
                 if os.path.exists(chemin_config):
                     with open(chemin_config, "r") as f:
@@ -225,22 +258,22 @@ if uploaded_files:
                         y_coin = cy - 100
                 else:
                     x_coin, y_coin = 0, 0
-                logo = logo.with_position((x_coin, y_coin))
+                
+                logo = positionner_clip(logo_res, (x_coin, y_coin))
                 video_finale = CompositeVideoClip([video_coupee, logo], size=video_coupee.size)
             
             # --- TRAITEMENT AVEC RECADRAGE ---
             else: 
                 nouvelle_duree = video.duration - 3
-                try:
-                    video_coupee = video.subclipped(0, nouvelle_duree) if nouvelle_duree > 0 else video
-                except AttributeError:
-                    video_coupee = video.subclip(0, nouvelle_duree) if nouvelle_duree > 0 else video
+                video_coupee = couper_video(video, 0, nouvelle_duree)
                 
                 largeur, hauteur = video_coupee.size
-                video_recadree = video_coupee.cropped(x1=0, y1=120, x2=largeur, y2=hauteur)
+                video_recadree = rogner_video(video_coupee, 0, 120, largeur, hauteur)
                 
-                logo_img = ImageClip(chemin_logo).with_duration(video_recadree.duration)
-                logo = redimensionner_image_clip(logo_img, width=150).with_position((20, 20))
+                logo_img = ImageClip(chemin_logo)
+                logo_img = definir_duree(logo_img, video_recadree.duration)
+                logo_res = redimensionner_image_clip(logo_img, width=150)
+                logo = positionner_clip(logo_res, (20, 20))
                 
                 video_finale = CompositeVideoClip([video_recadree, logo], size=video_recadree.size)
             
