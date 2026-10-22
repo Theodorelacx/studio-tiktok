@@ -279,16 +279,21 @@ st.subheader("📥 Gestion des vidéos finales")
 fichiers_finaux = [f for f in os.listdir(dossier_sortie) if f.endswith(".mp4")]
 
 if fichiers_finaux:
-    # Bouton global "Tout cocher / décocher"
-    tout_cocher = st.checkbox("☑️ Tout cocher / décocher d'un coup", key="select_all_videos")
+    # Callback pour basculer l'état de toutes les cases d'un coup
+    def toggle_all():
+        etat_actuel = st.session_state.get("master_select", False)
+        for f_fini in fichiers_finaux:
+            st.session_state[f"chk_{f_fini}"] = etat_actuel
+
+    # Bouton global "Tout cocher / décocher" avec callback direct
+    st.checkbox("☑️ Tout cocher / décocher d'un coup", key="master_select", on_change=toggle_all)
 
     st.write("Coche les vidéos que tu souhaites gérer :")
     fichiers_selectionnes = []
     for f_fini in fichiers_finaux:
         col_chk, col_dl = st.columns([4, 1])
         with col_chk:
-            # L'état de la case dépend soit de sa propre action, soit du bouton global "tout_cocher"
-            isSelected = st.checkbox(f"🎬 {f_fini}", value=tout_cocher, key=f"chk_{f_fini}")
+            isSelected = st.checkbox(f"🎬 {f_fini}", key=f"chk_{f_fini}")
             if isSelected:
                 fichiers_selectionnes.append(f_fini)
         with col_dl:
