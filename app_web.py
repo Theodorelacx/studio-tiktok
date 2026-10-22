@@ -43,20 +43,19 @@ POS_A = (86, 610)
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
-# SUPER-LISTE ÉLARGIE DE PLUS DE 50+ CRÉATEURS PHARES FR (15-30 ANS)
-CREATEURS_FR_ECOSYSTEME = [
-    "Squeezie", "Mastu", "McFly et Carlito", "Amixem", "Le Grand JD", "Inoxtag", 
-    "Michou", "Joyca", "Theodort", "Popcorn", "Zack Nani", "Legend", "HugoDécrypte", 
-    "Louis San", "Valouzz", "Lebouseuh", "Doigby", "FastGoodCuisine", "Jojol", 
-    "David Lafarge", "Thomas Gauthier", "Freddy Gladieux", "Nota Bene", 
-    "C'est une autre histoire", "Dr Nozman", "DirtyBiology", "ScienceEtonnante", 
-    "Monsieur Bidouille", "Jamy - Epic", "Vincent Lapierre", "Alex Hitchens", 
-    "Philippe Boxo", "Micode", "Underscore_", "Sardoche", "Kameto", "Aminematue",
-    "JLTOMMY", "Bibi", "Mastugame", "Mastunight", "LeStream", "Gotaga", "Domingo",
-    "Etoiles", "Kotei", "Terracid", "Lennie", "ANIS", "Brut France", "Konbini"
+# LISTE EXACTE DE TES CRÉATEURS ET CHAÎNES
+LISTE_CREATEURS = [
+    "Amixem", "Mastu", "Joyca", "Mcfly et Carlito", "Théodort", "Inoxtag",
+    "Squeezie", "Pierre Croce", "Juliette Katz Coucou Les Girls", "Seb la Frite",
+    "Giuseppe", "Popcorn Domingo", "Zack Nani Zack en Roue Libre", "Legend Guillaume Pley",
+    "L'Équipe de Nuit", "HugoDécrypte L'Interview Face Cachée", "Konbini Fast & Curious",
+    "Clique Canal+", "Brut", "Vincent Lapierre", "Golden Boy", "Loris Giuliano",
+    "Sacha SachaBeg", "Le Crayon", "Gaspard G", "Liv", "Sonny Court",
+    "Feldup Findings", "Micode", "Sylvqin", "Alex Hitchen", "Stephane Edouard",
+    "Thibault InShape", "Maghla", "Léna Situations"
 ]
 
-# Fonctions utilitaires MoviePy
+# Fonctions utilitaires MoviePy (Strictement inchangées)
 def couper_video(video, debut, fin):
     try:
         return video.subclipped(debut, fin) if fin > 0 else video
@@ -124,50 +123,52 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de ratissage global et intelligent dans tout l'écosystème français
-def recuperer_radar_global(api_key, mode_recent=True):
-    toutes_les_videos = []
-    
-    # Pour ratisser large sans saturer l'API, on pioche dans les thèmes globaux et les gros noms
-    termes_cles = ["interview", "podcast", "débat", "anecdote", "histoire vraie", "talk"]
-    
-    try:
-        for terme in termes_cles[:3]: # On prend un échantillon pour garantir une réponse ultra rapide
-            query = urllib.parse.quote(terme)
+# Fonction de récupération ciblée par créateur (7 derniers jours vs Historique)
+def recuperer_videos_createurs(api_key, mode_recent=True):
+    videos_recuperees = []
+    date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z" if mode_recent else None
+
+    for createur in LISTE_CREATEURS:
+        try:
+            query = urllib.parse.quote(createur)
             url = (
                 f"https://www.googleapis.com/youtube/v3/search?part=snippet"
                 f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
-                f"&videoDuration=medium&maxResults=10&key={api_key}"
+                f"&maxResults=1&key={api_key}"
             )
             
             if mode_recent:
-                date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z"
                 url += f"&publishedAfter={date_limite}&order=date"
             else:
                 url += "&order=viewCount"
 
-            req = urllib.request.Request(url)
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, timeout=4) as resp:
                 data = json.loads(resp.read().decode())
             
-            for item in data.get("items", []):
-                vid_id = item["id"]["videoId"]
-                snippet = item["snippet"]
-                auteur = snippet["channelTitle"]
+            items = data.get("items", [])
+            for item in items:
+                vid_id = item.get("id", {}).get("videoId")
+                if not vid_id:
+                    continue
+                snippet = item.get("snippet", {})
+                thumbnails = snippet.get("thumbnails", {})
+                thumb_url = thumbnails.get("high", {}).get("url") or thumbnails.get("medium", {}).get("url")
                 
-                # Filtrage intelligent pour s'assurer que ça correspond à l'écosystème français
-                toutes_les_videos.append({
-                    "title": snippet["title"],
-                    "author": auteur,
-                    "link": f"https://www.youtube.com/watch?v={vid_id}",
-                    "thumbnail": snippet["thumbnails"]["high"]["url"]
-                })
-        
-        # Supprimer les doublons éventuels par ID de vidéo
-        videos_uniques = {v['link']: v for v in toutes_les_videos}.values()
-        return list(videos_uniques)
-    except Exception as e:
-        return []
+                if thumb_url:
+                    videos_recuperees.append({
+                        "title": snippet.get("title", "Sans titre"),
+                        "author": createur,
+                        "link": f"https://www.youtube.com/watch?v={vid_id}",
+                        "thumbnail": thumb_url,
+                        "publish_time": snippet.get("publishTime", "")
+                    })
+        except Exception:
+            continue
+            
+    if mode_recent and videos_recuperees:
+        videos_recuperees.sort(key=lambda x: x["publish_time"], reverse=True)
+    return videos_recuperees
 
 # =========================================================================
 # NAVIGATION PRINCIPALE
@@ -179,7 +180,7 @@ section_principale = st.sidebar.radio(
 )
 
 # -------------------------------------------------------------------------
-# SECTION 1 : MONTAGE VIDÉO
+# SECTION 1 : MONTAGE VIDÉO (INTOUCHÉ)
 # -------------------------------------------------------------------------
 if section_principale == "🎬 Montage Vidéo":
     st.title("🎬 Studio TikTok - Web & Mobile")
@@ -396,38 +397,37 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR GLOBAL CULTURE JEUNE FR (VUE GÉNÉRALE)
+# SECTION 2 : RADAR CULTURE JEUNE FR (CIBLAGE PRÉCIS DE TA LISTE)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Global Culture Jeune FR")
-    st.write("Flux unifié et général de tout l'écosystème web français (Squeezie, Mastu, Legend, Inoxtag, Popcorn, etc.).")
+    st.title("🔥 Radar Culture Jeune FR - Vos Chaînes")
+    st.write("Suivi précis de votre liste de créateurs (Sorties < 7 jours & Best-Of historique).")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
-        mode_radar = st.radio(
-            "Choisis le mode de tri :",
-            ["⚡ Tendances Récentes (< 7 jours)", "🏆 Best-Of / Les plus vues (Historique)"],
+        choix_mode = st.radio(
+            "Sélectionne la vue :",
+            ["⚡ Sorties des 7 derniers jours", "🏆 Best-Of (Vidéos populaires de ces chaînes)"],
             horizontal=True
         )
+        mode_recent = True if "7 derniers jours" in choix_mode else False
 
-        mode_recent_bool = True if "Récentes" in mode_radar else False
+        if st.button("🔄 Charger / Actualiser les chaînes", type="primary"):
+            with st.spinner("Analyse de votre liste de créateurs en cours..."):
+                st.session_state['galerie_createurs'] = recuperer_videos_createurs(api_key, mode_recent=mode_recent)
 
-        if st.button("🚀 Actualiser le flux global", type="primary"):
-            with st.spinner("Ratissage de l'écosystème web français en cours..."):
-                resultats = recuperer_radar_global(api_key, mode_recent=mode_recent_bool)
-            
-            if resultats:
-                st.success(f"⚡ {len(resultats)} vidéos chargées depuis les meilleurs créateurs français !")
-                cols = st.columns(2)
-                for idx, vid in enumerate(resultats):
-                    with cols[idx % 2]:
-                        st.image(vid['thumbnail'], use_column_width=True)
-                        st.markdown(f"**{vid['title']}**")
-                        st.caption(f"📺 {vid['author']}")
-                        st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"vid_api_{idx}")
-                        st.markdown("---")
-            else:
-                st.warning("Aucune vidéo trouvée pour le moment. Réessaie dans un instant.")
+        if 'galerie_createurs' in st.session_state and st.session_state['galerie_createurs']:
+            st.success(f"🖼️ {len(st.session_state['galerie_createurs'])} vidéos trouvées pour vos chaînes !")
+            cols = st.columns(2)
+            for idx, vid in enumerate(st.session_state['galerie_createurs']):
+                with cols[idx % 2]:
+                    st.image(vid['thumbnail'], use_column_width=True)
+                    st.markdown(f"**{vid['title']}**")
+                    st.caption(f"📺 Créateur : {vid['author']}")
+                    st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_createur_{idx}")
+                    st.markdown("---")
+        else:
+            st.info("Clique sur **🔄 Charger / Actualiser les chaînes** pour afficher les vidéos de votre sélection.")
     else:
-        st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable. Configure-la dans les Secrets de Streamlit Cloud pour afficher le flux.")
+        st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable dans les Secrets de Streamlit.")
