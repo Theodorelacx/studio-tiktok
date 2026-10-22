@@ -5,9 +5,7 @@ import cv2
 import numpy as np
 import streamlit as st
 from PIL import Image
-import urllib.request
-import urllib.parse
-import xml.etree.ElementTree as ET
+import feedparser
 from concurrent.futures import ThreadPoolExecutor
 
 # Import sécurisé de MoviePy pour compatibilité PC / Cloud
@@ -133,45 +131,36 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction isolée pour interroger UNE seule chaîne
-def traiter_une_chaine(item):
+# Utilisation de feedparser pour une robustesse maximale
+def traiter_une_chaine_feedparser(item):
     nom, channel_id = item
-    ns = {
-        'atom': 'http://www.w3.org/2005/Atom',
-        'yt': 'http://www.youtube.com/xml/schemas/2015'
-    }
     try:
         url_rss = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-        req = urllib.request.Request(url_rss, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=2.5) as resp:
-            xml_data = resp.read()
-        root = ET.fromstring(xml_data)
+        feed = feedparser.parse(url_rss)
         
-        for entry in root.findall('atom:entry', ns):
-            vid_id_elem = entry.find('yt:videoId', ns)
-            title_elem = entry.find('atom:title', ns)
-            published_elem = entry.find('atom:published', ns)
+        if feed.entries:
+            entry = feed.entries[0] # La plus récente
+            vid_id = entry.get("yt_videoid", entry.get("link", "").split("v=")[-1])
+            titre = entry.get("title", "Sans titre")
+            pub_date = entry.get("published", "")
             
-            if vid_id_elem is not None and title_elem is not None:
-                vid_id = vid_id_elem.text
+            if vid_id:
                 return {
-                    "title": title_elem.text,
+                    "title": titre,
                     "author": nom,
                     "link": f"https://www.youtube.com/watch?v={vid_id}",
                     "thumbnail": f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg",
-                    "publish_time": published_elem.text if published_elem is not None else ""
+                    "publish_time": pub_date
                 }
     except Exception:
         return None
     return None
 
-# MICE EN CACHE STREAMLIT + PARALLÉLISME MULTI-THREADING
 @st.cache_data(ttl=900)
 def recuperer_flux_rss_parallele():
     toutes_les_videos = []
-    # Interrogation simultanée des 19 chaînes
     with ThreadPoolExecutor(max_workers=10) as executor:
-        resultats = list(executor.map(traiter_une_chaine, CHAINES_RSS.items()))
+        resultats = list(executor.map(traiter_une_chaine_feedparser, CHAINES_RSS.items()))
     
     for res in resultats:
         if res:
@@ -408,14 +397,13 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR CULTURE JEUNE FR (RSS ULTRA-RAPIDE PARALLÈLE + CACHE)
+# SECTION 2 : RADAR CULTURE JEUNE FR (FEEDPARSER ROBUSTE)
 # -------------------------------------------------------------------------
 else:
     st.title("🔥 Radar Culture Jeune FR")
-    st.write("Flux instantané des dernières publications de vos chaînes (mis à jour en direct).")
+    st.write("Flux instantané et sécurisé des dernières publications de vos chaînes.")
 
-    # Chargement instantané grâce au cache et au parallélisme
-    with st.spinner("Chargement ultra-rapide des chaînes..."):
+    with st.spinner("Chargement des flux..."):
         videos_rss = recuperer_flux_rss_parallele()
 
     if st.button("🔄 Rafraîchir le flux", type="primary"):
@@ -423,14 +411,14 @@ else:
         st.rerun()
 
     if videos_rss:
-        st.success(f"🖼️ {len(videos_rss)} dernières vidéos récupérées en un instant !")
+        st.success(f"🖼️ {len(videos_rss)} dernières vidéos récupérées !")
         cols = st.columns(2)
         for idx, vid in enumerate(videos_rss):
             with cols[idx % 2]:
                 st.image(vid['thumbnail'], use_column_width=True)
                 st.markdown(f"**{vid['title']}**")
                 st.caption(f"📺 Chaîne : {vid['author']}")
-                st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_rss_fast_{idx}")
+                st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_fp_{idx}")
                 st.markdown("---")
     else:
-        st.warning("⚠️ Les serveurs n'ont pas renvoyé de données. Vérifiez la connexion réseau.")
+        st.warning("⚠️ Impossible de charger les flux pour l'instant. Vérifiez que la bibliothèque `feedparser` est bien présente dans votre fichier `requirements.txt` sur Streamlit Cloud.")
