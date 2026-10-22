@@ -43,7 +43,7 @@ POS_A = (86, 610)
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
-# CARTOGRAPHIE DES IDENTIFIANTS TECHNIQUES UNIQUS DE CHAÎNES (UC...)
+# CARTOGRAPHIE DES IDENTIFIANTS TECHNIQUES DE CHAÎNES
 CHAINES_OFFICIELLES = {
     "Squeezie": "UC3IZKmgri5Aegssf982I9vQ",
     "Mastu": "UC8A_35MIs-34KqJ9T2Nnntw",
@@ -134,14 +134,18 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Recherche directe par ID DE CHAÎNE + Exclusion des Shorts via videoDuration=medium
+# Fonction de récupération optimisée et déboguée
 def recuperer_par_channel_id(api_key, mode_recent=True):
     videos_recuperees = []
+    # Calcul de la date limite (-7 jours)
     date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z" if mode_recent else None
+    
+    erreurs = []
 
+    # On parcourt les chaînes
     for nom, channel_id in CHAINES_OFFICIELLES.items():
         try:
-            # videoDuration=medium filtre toutes les vidéos de moins de 4 minutes (exclut tous les Shorts)
+            # videoDuration=medium exclut TOUS les Shorts (< 4 min)
             url = (
                 f"https://www.googleapis.com/youtube/v3/search?part=snippet"
                 f"&channelId={channel_id}&type=video&videoDuration=medium"
@@ -154,7 +158,7 @@ def recuperer_par_channel_id(api_key, mode_recent=True):
                 url += "&order=viewCount"
 
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=4) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode())
             
             items = data.get("items", [])
@@ -174,9 +178,14 @@ def recuperer_par_channel_id(api_key, mode_recent=True):
                         "thumbnail": thumb_url,
                         "publish_time": snippet.get("publishTime", "")
                     })
-        except Exception:
-            continue
+        except urllib.error.HTTPError as e:
+            erreurs.append(f"Erreur HTTP {e.code} sur {nom}")
+        except Exception as e:
+            erreurs.append(f"Erreur sur {nom}: {str(e)}")
             
+    if erreurs and not videos_recuperees:
+        st.error(f"⚠️ Problème de connexion API YouTube : {erreurs[0]}")
+
     if mode_recent and videos_recuperees:
         videos_recuperees.sort(key=lambda x: x["publish_time"], reverse=True)
     return videos_recuperees
@@ -408,28 +417,28 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR CULTURE JEUNE FR (SÉLECTION PAR CHAÎNE UNIQUE + SANS SHORTS)
+# SECTION 2 : RADAR CULTURE JEUNE FR (FLUX DIRECT DE VOS CHAÎNES)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Culture Jeune FR - Vos Chaînes Officieuses")
-    st.write("Tri strict par ID de chaîne (hors Shorts, vidéos longue durée uniquement).")
+    st.title("🔥 Radar Culture Jeune FR - Vos Chaînes")
+    st.write("Chaînes officielles ciblées (Format Long uniquement, hors Shorts).")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
         choix_mode = st.radio(
             "Sélectionne la vue :",
-            ["⚡ Sorties des 7 derniers jours (Format Long)", "🏆 Best-Of (Vidéos populaires de ces chaînes)"],
+            ["⚡ Sorties des 7 derniers jours (Format Long)", "🏆 Best-Of (Vidéos les plus vues)"],
             horizontal=True
         )
         mode_recent = True if "7 derniers jours" in choix_mode else False
 
         if st.button("🔄 Charger / Actualiser les chaînes", type="primary"):
-            with st.spinner("Interrogation directe des chaînes cibles en cours..."):
+            with st.spinner("Analyse directe de vos chaînes en cours..."):
                 st.session_state['galerie_createurs'] = recuperer_par_channel_id(api_key, mode_recent=mode_recent)
 
         if 'galerie_createurs' in st.session_state and st.session_state['galerie_createurs']:
-            st.success(f"🖼️ {len(st.session_state['galerie_createurs'])} vidéos longues chargées !")
+            st.success(f"🖼️ {len(st.session_state['galerie_createurs'])} vidéos chargées !")
             cols = st.columns(2)
             for idx, vid in enumerate(st.session_state['galerie_createurs']):
                 with cols[idx % 2]:
@@ -438,7 +447,9 @@ else:
                     st.caption(f"📺 Chaîne : {vid['author']}")
                     st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_channel_{idx}")
                     st.markdown("---")
+        elif 'galerie_createurs' in st.session_state and not st.session_state['galerie_createurs']:
+            st.warning("Aucune vidéo de plus de 4 minutes trouvée pour ces chaînes sur les 7 derniers jours. Bascule sur la vue 'Best-Of' pour voir leurs vidéos phares.")
         else:
-            st.info("Clique sur **🔄 Charger / Actualiser les chaînes** pour lancer la recherche directe.")
+            st.info("Clique sur **🔄 Charger / Actualiser les chaînes** pour lancer l'affichage.")
     else:
-        st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable dans les Secrets de Streamlit.")
+        st.error("⚠️ Clé `YOUTUBE_API_KEY` introuvable dans les Secrets de Streamlit.")
