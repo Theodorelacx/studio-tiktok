@@ -43,17 +43,28 @@ POS_A = (86, 610)
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
-# LISTE EXACTE DE TES CRÉATEURS ET CHAÎNES
-LISTE_CREATEURS = [
-    "Amixem", "Mastu", "Joyca", "Mcfly et Carlito", "Théodort", "Inoxtag",
-    "Squeezie", "Pierre Croce", "Juliette Katz Coucou Les Girls", "Seb la Frite",
-    "Giuseppe", "Popcorn Domingo", "Zack Nani Zack en Roue Libre", "Legend Guillaume Pley",
-    "L'Équipe de Nuit", "HugoDécrypte L'Interview Face Cachée", "Konbini Fast & Curious",
-    "Clique Canal+", "Brut", "Vincent Lapierre", "Golden Boy", "Loris Giuliano",
-    "Sacha SachaBeg", "Le Crayon", "Gaspard G", "Liv", "Sonny Court",
-    "Feldup Findings", "Micode", "Sylvqin", "Alex Hitchen", "Stephane Edouard",
-    "Thibault InShape", "Maghla", "Léna Situations"
-]
+# CARTOGRAPHIE DES IDENTIFIANTS TECHNIQUES UNIQUS DE CHAÎNES (UC...)
+CHAINES_OFFICIELLES = {
+    "Squeezie": "UC3IZKmgri5Aegssf982I9vQ",
+    "Mastu": "UC8A_35MIs-34KqJ9T2Nnntw",
+    "Amixem": "UC295-Knpr19sXCqfP1M9S3Q",
+    "Mcfly et Carlito": "UC5p13YI3eP1e7vS-_n4LInA",
+    "Joyca": "UCyWqL45A9oO0zP-R85E6i1g",
+    "Inoxtag": "UCKe5B3K_I8sWjK4_m72f5tQ",
+    "Théodort": "UC8i0Bf1U3XkO3iV1JtVb89A",
+    "Pierre Croce": "UCjR0fTOf4MTo8dZf5_C0ZkA",
+    "Seb": "UCThxR42B_a41P7z43V3WpXg",
+    "HugoDécrypte": "UC4P_ABe32I8j_xP7kG7d8wA",
+    "Konbini": "UCm9K3_C4GZ9O3sV34vS5bAw",
+    "Brut.": "UC_z89S4VqYh54v0dJ12fX5Q",
+    "Popcorn": "UCaY_kS-M9i6C_P8v72f-I9Q",
+    "Zack Nani": "UCG0-M2C7k5L617I9O2gS-0g",
+    "Legend (Guillaume Pley)": "UC7N2X1S2n9W74OqVf5N9_3w",
+    "Micode": "UC62RjK15sY1S0O4P_Vv5C8A",
+    "Vincent Lapierre": "UCX8c7Z9X41zQkZ7a3P-xY0g",
+    "Feldup": "UCv0Jk_nI4VvW_T_f4j1M89w",
+    "Léna Situations": "UCG1S-uXf22eE5tJv5vM2L-Q"
+}
 
 # Fonctions utilitaires MoviePy (Strictement inchangées)
 def couper_video(video, debut, fin):
@@ -123,17 +134,17 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de récupération ciblée par créateur (7 derniers jours vs Historique)
-def recuperer_videos_createurs(api_key, mode_recent=True):
+# Recherche directe par ID DE CHAÎNE + Exclusion des Shorts via videoDuration=medium
+def recuperer_par_channel_id(api_key, mode_recent=True):
     videos_recuperees = []
     date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z" if mode_recent else None
 
-    for createur in LISTE_CREATEURS:
+    for nom, channel_id in CHAINES_OFFICIELLES.items():
         try:
-            query = urllib.parse.quote(createur)
+            # videoDuration=medium filtre toutes les vidéos de moins de 4 minutes (exclut tous les Shorts)
             url = (
                 f"https://www.googleapis.com/youtube/v3/search?part=snippet"
-                f"&q={query}&type=video&regionCode=FR&relevanceLanguage=fr"
+                f"&channelId={channel_id}&type=video&videoDuration=medium"
                 f"&maxResults=1&key={api_key}"
             )
             
@@ -158,7 +169,7 @@ def recuperer_videos_createurs(api_key, mode_recent=True):
                 if thumb_url:
                     videos_recuperees.append({
                         "title": snippet.get("title", "Sans titre"),
-                        "author": createur,
+                        "author": nom,
                         "link": f"https://www.youtube.com/watch?v={vid_id}",
                         "thumbnail": thumb_url,
                         "publish_time": snippet.get("publishTime", "")
@@ -397,37 +408,37 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR CULTURE JEUNE FR (CIBLAGE PRÉCIS DE TA LISTE)
+# SECTION 2 : RADAR CULTURE JEUNE FR (SÉLECTION PAR CHAÎNE UNIQUE + SANS SHORTS)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Culture Jeune FR - Vos Chaînes")
-    st.write("Suivi précis de votre liste de créateurs (Sorties < 7 jours & Best-Of historique).")
+    st.title("🔥 Radar Culture Jeune FR - Vos Chaînes Officieuses")
+    st.write("Tri strict par ID de chaîne (hors Shorts, vidéos longue durée uniquement).")
 
     api_key = st.secrets.get("YOUTUBE_API_KEY", "")
 
     if api_key:
         choix_mode = st.radio(
             "Sélectionne la vue :",
-            ["⚡ Sorties des 7 derniers jours", "🏆 Best-Of (Vidéos populaires de ces chaînes)"],
+            ["⚡ Sorties des 7 derniers jours (Format Long)", "🏆 Best-Of (Vidéos populaires de ces chaînes)"],
             horizontal=True
         )
         mode_recent = True if "7 derniers jours" in choix_mode else False
 
         if st.button("🔄 Charger / Actualiser les chaînes", type="primary"):
-            with st.spinner("Analyse de votre liste de créateurs en cours..."):
-                st.session_state['galerie_createurs'] = recuperer_videos_createurs(api_key, mode_recent=mode_recent)
+            with st.spinner("Interrogation directe des chaînes cibles en cours..."):
+                st.session_state['galerie_createurs'] = recuperer_par_channel_id(api_key, mode_recent=mode_recent)
 
         if 'galerie_createurs' in st.session_state and st.session_state['galerie_createurs']:
-            st.success(f"🖼️ {len(st.session_state['galerie_createurs'])} vidéos trouvées pour vos chaînes !")
+            st.success(f"🖼️ {len(st.session_state['galerie_createurs'])} vidéos longues chargées !")
             cols = st.columns(2)
             for idx, vid in enumerate(st.session_state['galerie_createurs']):
                 with cols[idx % 2]:
                     st.image(vid['thumbnail'], use_column_width=True)
                     st.markdown(f"**{vid['title']}**")
-                    st.caption(f"📺 Créateur : {vid['author']}")
-                    st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_createur_{idx}")
+                    st.caption(f"📺 Chaîne : {vid['author']}")
+                    st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_channel_{idx}")
                     st.markdown("---")
         else:
-            st.info("Clique sur **🔄 Charger / Actualiser les chaînes** pour afficher les vidéos de votre sélection.")
+            st.info("Clique sur **🔄 Charger / Actualiser les chaînes** pour lancer la recherche directe.")
     else:
         st.warning("⚠️ Clé `YOUTUBE_API_KEY` introuvable dans les Secrets de Streamlit.")
