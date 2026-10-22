@@ -8,6 +8,7 @@ from PIL import Image
 import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 
 # Import sécurisé de MoviePy pour compatibilité PC / Cloud
 try:
@@ -42,7 +43,6 @@ POS_A = (86, 610)
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
-# CARTOGRAPHIE DES IDENTIFIANTS TECHNIQUES DE CHAÎNES POUR LES FLUX RSS
 CHAINES_RSS = {
     "Squeezie": "UC3IZKmgri5Aegssf982I9vQ",
     "Mastu": "UC8A_35MIs-34KqJ9T2Nnntw",
@@ -133,51 +133,50 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Récupération ultra-rapide et sans quota via les flux RSS officiels YouTube
-def recuperer_flux_rss():
-    toutes_les_videos = []
+# Fonction isolée pour interroger UNE seule chaîne
+def traiter_une_chaine(item):
+    nom, channel_id = item
     ns = {
         'atom': 'http://www.w3.org/2005/Atom',
-        'yt': 'http://www.youtube.com/xml/schemas/2015',
-        'media': 'http://search.yahoo.com/mrss/'
+        'yt': 'http://www.youtube.com/xml/schemas/2015'
     }
+    try:
+        url_rss = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+        req = urllib.request.Request(url_rss, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            xml_data = resp.read()
+        root = ET.fromstring(xml_data)
+        
+        for entry in root.findall('atom:entry', ns):
+            vid_id_elem = entry.find('yt:videoId', ns)
+            title_elem = entry.find('atom:title', ns)
+            published_elem = entry.find('atom:published', ns)
+            
+            if vid_id_elem is not None and title_elem is not None:
+                vid_id = vid_id_elem.text
+                return {
+                    "title": title_elem.text,
+                    "author": nom,
+                    "link": f"https://www.youtube.com/watch?v={vid_id}",
+                    "thumbnail": f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg",
+                    "publish_time": published_elem.text if published_elem is not None else ""
+                }
+    except Exception:
+        return None
+    return None
 
-    for nom, channel_id in CHAINES_RSS.items():
-        try:
-            url_rss = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-            req = urllib.request.Request(url_rss, headers={'User-Agent': 'Mozilla/5.0'})
+# MICE EN CACHE STREAMLIT + PARALLÉLISME MULTI-THREADING
+@st.cache_data(ttl=900)
+def recuperer_flux_rss_parallele():
+    toutes_les_videos = []
+    # Interrogation simultanée des 19 chaînes
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        resultats = list(executor.map(traiter_une_chaine, CHAINES_RSS.items()))
+    
+    for res in resultats:
+        if res:
+            toutes_les_videos.append(res)
             
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                xml_data = resp.read()
-            
-            root = ET.fromstring(xml_data)
-            
-            # On récupère les items du flux (les plus récents en premier)
-            for entry in root.findall('atom:entry', ns):
-                vid_id_elem = entry.find('yt:videoId', ns)
-                title_elem = entry.find('atom:title', ns)
-                published_elem = entry.find('atom:published', ns)
-                
-                if vid_id_elem is not None and title_elem is not None:
-                    vid_id = vid_id_elem.text
-                    titre = title_elem.text
-                    pub_date = published_elem.text if published_elem is not None else ""
-                    
-                    # Construction propre de l'URL de la miniature haute qualité standard de YouTube
-                    thumb_url = f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg"
-                    
-                    toutes_les_videos.append({
-                        "title": titre,
-                        "author": nom,
-                        "link": f"https://www.youtube.com/watch?v={vid_id}",
-                        "thumbnail": thumb_url,
-                        "publish_time": pub_date
-                    })
-                    break # On prend juste la dernière vidéo en date de la chaîne pour le radar
-        except Exception:
-            continue
-            
-    # Tri du plus récent au plus ancien
     if toutes_les_videos:
         toutes_les_videos.sort(key=lambda x: x["publish_time"], reverse=True)
     return toutes_les_videos
@@ -409,25 +408,29 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR CULTURE JEUNE FR (FLUX RSS 100% GRATUIT & SANS API)
+# SECTION 2 : RADAR CULTURE JEUNE FR (RSS ULTRA-RAPIDE PARALLÈLE + CACHE)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Culture Jeune FR - Flux RSS Direct")
-    st.write("Dernières publications de vos chaînes favorites, sans aucune limite d'API ni erreur 429.")
+    st.title("🔥 Radar Culture Jeune FR")
+    st.write("Flux instantané des dernières publications de vos chaînes (mis à jour en direct).")
 
-    if st.button("🔄 Charger le flux des chaînes", type="primary"):
-        with st.spinner("Récupération des flux RSS en cours..."):
-            st.session_state['galerie_rss'] = recuperer_flux_rss()
+    # Chargement instantané grâce au cache et au parallélisme
+    with st.spinner("Chargement ultra-rapide des chaînes..."):
+        videos_rss = recuperer_flux_rss_parallele()
 
-    if 'galerie_rss' in st.session_state and st.session_state['galerie_rss']:
-        st.success(f"🖼️ {len(st.session_state['galerie_rss'])} dernières vidéos chargées !")
+    if st.button("🔄 Rafraîchir le flux", type="primary"):
+        st.cache_data.clear()
+        st.rerun()
+
+    if videos_rss:
+        st.success(f"🖼️ {len(videos_rss)} dernières vidéos récupérées en un instant !")
         cols = st.columns(2)
-        for idx, vid in enumerate(st.session_state['galerie_rss']):
+        for idx, vid in enumerate(videos_rss):
             with cols[idx % 2]:
                 st.image(vid['thumbnail'], use_column_width=True)
                 st.markdown(f"**{vid['title']}**")
                 st.caption(f"📺 Chaîne : {vid['author']}")
-                st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_rss_{idx}")
+                st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_rss_fast_{idx}")
                 st.markdown("---")
     else:
-        st.info("Clique sur **🔄 Charger le flux des chaînes** pour afficher les dernières nouveautés.")
+        st.warning("⚠️ Les serveurs n'ont pas renvoyé de données. Vérifiez la connexion réseau.")
