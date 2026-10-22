@@ -7,8 +7,7 @@ import streamlit as st
 from PIL import Image
 import urllib.request
 import urllib.parse
-import json
-from datetime import datetime, timedelta
+import xml.etree.ElementTree as ET
 
 # Import sécurisé de MoviePy pour compatibilité PC / Cloud
 try:
@@ -43,8 +42,8 @@ POS_A = (86, 610)
 POS_B = (485, 861)            
 # -------------------------------------------------------------------------
 
-# CARTOGRAPHIE DES IDENTIFIANTS TECHNIQUES DE CHAÎNES
-CHAINES_OFFICIELLES = {
+# CARTOGRAPHIE DES IDENTIFIANTS TECHNIQUES DE CHAÎNES POUR LES FLUX RSS
+CHAINES_RSS = {
     "Squeezie": "UC3IZKmgri5Aegssf982I9vQ",
     "Mastu": "UC8A_35MIs-34KqJ9T2Nnntw",
     "Amixem": "UC295-Knpr19sXCqfP1M9S3Q",
@@ -134,61 +133,54 @@ def lire_coordonnees():
             pass
     return 172, 344
 
-# Fonction de récupération optimisée et déboguée
-def recuperer_par_channel_id(api_key, mode_recent=True):
-    videos_recuperees = []
-    # Calcul de la date limite (-7 jours)
-    date_limite = (datetime.utcnow() - timedelta(days=7)).isoformat("T") + "Z" if mode_recent else None
-    
-    erreurs = []
+# Récupération ultra-rapide et sans quota via les flux RSS officiels YouTube
+def recuperer_flux_rss():
+    toutes_les_videos = []
+    ns = {
+        'atom': 'http://www.w3.org/2005/Atom',
+        'yt': 'http://www.youtube.com/xml/schemas/2015',
+        'media': 'http://search.yahoo.com/mrss/'
+    }
 
-    # On parcourt les chaînes
-    for nom, channel_id in CHAINES_OFFICIELLES.items():
+    for nom, channel_id in CHAINES_RSS.items():
         try:
-            # videoDuration=medium exclut TOUS les Shorts (< 4 min)
-            url = (
-                f"https://www.googleapis.com/youtube/v3/search?part=snippet"
-                f"&channelId={channel_id}&type=video&videoDuration=medium"
-                f"&maxResults=1&key={api_key}"
-            )
+            url_rss = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+            req = urllib.request.Request(url_rss, headers={'User-Agent': 'Mozilla/5.0'})
             
-            if mode_recent:
-                url += f"&publishedAfter={date_limite}&order=date"
-            else:
-                url += "&order=viewCount"
-
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, timeout=3) as resp:
-                data = json.loads(resp.read().decode())
+                xml_data = resp.read()
             
-            items = data.get("items", [])
-            for item in items:
-                vid_id = item.get("id", {}).get("videoId")
-                if not vid_id:
-                    continue
-                snippet = item.get("snippet", {})
-                thumbnails = snippet.get("thumbnails", {})
-                thumb_url = thumbnails.get("high", {}).get("url") or thumbnails.get("medium", {}).get("url")
+            root = ET.fromstring(xml_data)
+            
+            # On récupère les items du flux (les plus récents en premier)
+            for entry in root.findall('atom:entry', ns):
+                vid_id_elem = entry.find('yt:videoId', ns)
+                title_elem = entry.find('atom:title', ns)
+                published_elem = entry.find('atom:published', ns)
                 
-                if thumb_url:
-                    videos_recuperees.append({
-                        "title": snippet.get("title", "Sans titre"),
+                if vid_id_elem is not None and title_elem is not None:
+                    vid_id = vid_id_elem.text
+                    titre = title_elem.text
+                    pub_date = published_elem.text if published_elem is not None else ""
+                    
+                    # Construction propre de l'URL de la miniature haute qualité standard de YouTube
+                    thumb_url = f"https://img.youtube.com/vi/{vid_id}/hqdefault.jpg"
+                    
+                    toutes_les_videos.append({
+                        "title": titre,
                         "author": nom,
                         "link": f"https://www.youtube.com/watch?v={vid_id}",
                         "thumbnail": thumb_url,
-                        "publish_time": snippet.get("publishTime", "")
+                        "publish_time": pub_date
                     })
-        except urllib.error.HTTPError as e:
-            erreurs.append(f"Erreur HTTP {e.code} sur {nom}")
-        except Exception as e:
-            erreurs.append(f"Erreur sur {nom}: {str(e)}")
+                    break # On prend juste la dernière vidéo en date de la chaîne pour le radar
+        except Exception:
+            continue
             
-    if erreurs and not videos_recuperees:
-        st.error(f"⚠️ Problème de connexion API YouTube : {erreurs[0]}")
-
-    if mode_recent and videos_recuperees:
-        videos_recuperees.sort(key=lambda x: x["publish_time"], reverse=True)
-    return videos_recuperees
+    # Tri du plus récent au plus ancien
+    if toutes_les_videos:
+        toutes_les_videos.sort(key=lambda x: x["publish_time"], reverse=True)
+    return toutes_les_videos
 
 # =========================================================================
 # NAVIGATION PRINCIPALE
@@ -417,39 +409,25 @@ if section_principale == "🎬 Montage Vidéo":
         st.info("Aucune vidéo finale pour le moment.")
 
 # -------------------------------------------------------------------------
-# SECTION 2 : RADAR CULTURE JEUNE FR (FLUX DIRECT DE VOS CHAÎNES)
+# SECTION 2 : RADAR CULTURE JEUNE FR (FLUX RSS 100% GRATUIT & SANS API)
 # -------------------------------------------------------------------------
 else:
-    st.title("🔥 Radar Culture Jeune FR - Vos Chaînes")
-    st.write("Chaînes officielles ciblées (Format Long uniquement, hors Shorts).")
+    st.title("🔥 Radar Culture Jeune FR - Flux RSS Direct")
+    st.write("Dernières publications de vos chaînes favorites, sans aucune limite d'API ni erreur 429.")
 
-    api_key = st.secrets.get("YOUTUBE_API_KEY", "")
+    if st.button("🔄 Charger le flux des chaînes", type="primary"):
+        with st.spinner("Récupération des flux RSS en cours..."):
+            st.session_state['galerie_rss'] = recuperer_flux_rss()
 
-    if api_key:
-        choix_mode = st.radio(
-            "Sélectionne la vue :",
-            ["⚡ Sorties des 7 derniers jours (Format Long)", "🏆 Best-Of (Vidéos les plus vues)"],
-            horizontal=True
-        )
-        mode_recent = True if "7 derniers jours" in choix_mode else False
-
-        if st.button("🔄 Charger / Actualiser les chaînes", type="primary"):
-            with st.spinner("Analyse directe de vos chaînes en cours..."):
-                st.session_state['galerie_createurs'] = recuperer_par_channel_id(api_key, mode_recent=mode_recent)
-
-        if 'galerie_createurs' in st.session_state and st.session_state['galerie_createurs']:
-            st.success(f"🖼️ {len(st.session_state['galerie_createurs'])} vidéos chargées !")
-            cols = st.columns(2)
-            for idx, vid in enumerate(st.session_state['galerie_createurs']):
-                with cols[idx % 2]:
-                    st.image(vid['thumbnail'], use_column_width=True)
-                    st.markdown(f"**{vid['title']}**")
-                    st.caption(f"📺 Chaîne : {vid['author']}")
-                    st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_channel_{idx}")
-                    st.markdown("---")
-        elif 'galerie_createurs' in st.session_state and not st.session_state['galerie_createurs']:
-            st.warning("Aucune vidéo de plus de 4 minutes trouvée pour ces chaînes sur les 7 derniers jours. Bascule sur la vue 'Best-Of' pour voir leurs vidéos phares.")
-        else:
-            st.info("Clique sur **🔄 Charger / Actualiser les chaînes** pour lancer l'affichage.")
+    if 'galerie_rss' in st.session_state and st.session_state['galerie_rss']:
+        st.success(f"🖼️ {len(st.session_state['galerie_rss'])} dernières vidéos chargées !")
+        cols = st.columns(2)
+        for idx, vid in enumerate(st.session_state['galerie_rss']):
+            with cols[idx % 2]:
+                st.image(vid['thumbnail'], use_column_width=True)
+                st.markdown(f"**{vid['title']}**")
+                st.caption(f"📺 Chaîne : {vid['author']}")
+                st.link_button("▶️ Voir sur YouTube", vid['link'], key=f"btn_rss_{idx}")
+                st.markdown("---")
     else:
-        st.error("⚠️ Clé `YOUTUBE_API_KEY` introuvable dans les Secrets de Streamlit.")
+        st.info("Clique sur **🔄 Charger le flux des chaînes** pour afficher les dernières nouveautés.")
