@@ -56,7 +56,7 @@ def sauvegarder_liens(liste_liens):
     with open(chemin_liens, "w", encoding="utf-8") as f:
         json.dump(liste_liens, f, ensure_ascii=False, indent=4)
 
-# Fonctions utilitaires MoviePy (Strictement inchangées)
+# Fonctions utilitaires MoviePy (Corrigées et sécurisées)
 def couper_video(video, debut, fin):
     try:
         return video.subclipped(debut, fin) if fin > 0 else video
@@ -65,9 +65,11 @@ def couper_video(video, debut, fin):
 
 def redimensionner_image_clip(clip, width=None, height=None):
     try:
-        return clip.resized(width=width, height=height, apply_to=['mask'], resample='bicubic')
-    except AttributeError:
+        # MoviePy v2 compatible
+        return clip.resized(width=width, height=height)
+    except (AttributeError, TypeError):
         try:
+            # MoviePy v1 compatible
             return clip.resize(width=width, height=height, apply_to=['mask'])
         except:
             return clip.resize(width=width, height=height)
@@ -145,7 +147,6 @@ if section_principale == "🎬 Studio de Montage":
         ["Traitement Standard", "Traitement avec Recadrage", "Traitement reallift00n"]
     )
 
-    # Info utile pour l'utilisateur
     if not os.path.exists(chemin_abonnez_vous):
         st.info("💡 Astuce : Pense à placer ton fichier `abonnez_vous.mp4` (la vidéo de 2 secondes) dans le dossier du projet pour qu'il s'ajoute automatiquement aux vidéos de moins d'une minute.")
 
