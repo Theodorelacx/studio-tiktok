@@ -9,9 +9,9 @@ from PIL import Image
 
 # Import sécurisé de MoviePy pour compatibilité PC / Cloud
 try:
-    from moviepy import VideoFileClip, ImageClip, CompositeVideoClip
+    from moviepy import VideoFileClip, ImageClip, CompositeVideoClip, concatenate_videoclips
 except ImportError:
-    from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip
+    from moviepy.editor import VideoFileClip, ImageClip, CompositeVideoClip, concatenate_videoclips
 
 # Configuration de la page web
 st.set_page_config(page_title="Studio TikTok Mobile", page_icon="🎬", layout="centered")
@@ -27,6 +27,7 @@ chemin_logo = os.path.join(dossier_actuel, "logo.png")
 chemin_logo2 = os.path.join(dossier_actuel, "logo2.png")
 chemin_config = os.path.join(dossier_actuel, "config.txt")
 chemin_liens = os.path.join(dossier_actuel, "liens_idees.json")
+chemin_abonnez_vous = os.path.join(dossier_actuel, "abonnez_vous.mp4")
 
 for d in [dossier_brutes_standard, dossier_brutes_recadrage, dossier_brutes_reallift00n, dossier_sortie]:
     os.makedirs(d, exist_ok=True)
@@ -133,7 +134,7 @@ section_principale = st.sidebar.radio(
 )
 
 # -------------------------------------------------------------------------
-# SECTION 1 : STUDIO DE MONTAGE (100% INTACT)
+# SECTION 1 : STUDIO DE MONTAGE (100% INTACT + EXTENSION < 60s)
 # -------------------------------------------------------------------------
 if section_principale == "🎬 Studio de Montage":
     st.title("🎬 Studio TikTok - Web & Mobile")
@@ -143,6 +144,10 @@ if section_principale == "🎬 Studio de Montage":
         "Choisis ton mode de traitement :", 
         ["Traitement Standard", "Traitement avec Recadrage", "Traitement reallift00n"]
     )
+
+    # Info utile pour l'utilisateur
+    if not os.path.exists(chemin_abonnez_vous):
+        st.info("💡 Astuce : Pense à placer ton fichier `abonnez_vous.mp4` (la vidéo de 2 secondes) dans le dossier du projet pour qu'il s'ajoute automatiquement aux vidéos de moins d'une minute.")
 
     st.subheader("1. Sélectionne tes vidéos brutes")
     uploaded_files = st.file_uploader("Glisse ou sélectionne tes vidéos brutes (.mp4)", type=["mp4"], accept_multiple_files=True)
@@ -283,6 +288,15 @@ if section_principale == "🎬 Studio de Montage":
                     logo = positionner_clip(logo_res, (20, 20))
                     video_finale = CompositeVideoClip([video_recadree, logo], size=video_recadree.size)
                 
+                # --- VÉRIFICATION DE LA DURÉE POUR AJOUT DE "ABONNEZ-VOUS" ---
+                video_outro = None
+                if video_finale.duration < 60.0 and os.path.exists(chemin_abonnez_vous):
+                    try:
+                        video_outro = VideoFileClip(chemin_abonnez_vous)
+                        video_finale = concatenate_videoclips([video_finale, video_outro])
+                    except:
+                        pass
+
                 temp_audio = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
                 try:
                     video_finale.write_videofile(
@@ -295,6 +309,8 @@ if section_principale == "🎬 Studio de Montage":
                         except: pass
                 
                 video.close()
+                if video_outro:
+                    video_outro.close()
                 video_finale.close()
                 barre_progression.progress((index + 1) / total)
                 
@@ -364,7 +380,6 @@ else:
     st.title("💡 Boîte à Idées - Liens & Inspirations")
     st.write("Enregistre ici tes idées de vidéos à clipper plus tard pour **Actub** et **Reallifet00n**.")
 
-    # Formulaire d'ajout de lien
     with st.form("form_ajout_lien", clear_on_submit=True):
         st.subheader("➕ Ajouter un nouveau lien")
         url_input = st.text_input("URL de la vidéo (YouTube, TikTok, etc.)")
@@ -388,9 +403,7 @@ else:
 
     st.markdown("---")
 
-    # Affichage des liens par catégorie
     tous_les_liens = charger_liens()
-
     tab_actub, tab_reallifet00n = st.tabs(["📌 Actub", "🔥 Reallifet00n"])
 
     with tab_actub:
