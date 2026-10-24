@@ -65,11 +65,9 @@ def couper_video(video, debut, fin):
 
 def redimensionner_image_clip(clip, width=None, height=None):
     try:
-        # MoviePy v2 compatible
         return clip.resized(width=width, height=height)
     except (AttributeError, TypeError):
         try:
-            # MoviePy v1 compatible
             return clip.resize(width=width, height=height, apply_to=['mask'])
         except:
             return clip.resize(width=width, height=height)
@@ -136,7 +134,7 @@ section_principale = st.sidebar.radio(
 )
 
 # -------------------------------------------------------------------------
-# SECTION 1 : STUDIO DE MONTAGE (100% INTACT + EXTENSION < 60s)
+# SECTION 1 : STUDIO DE MONTAGE
 # -------------------------------------------------------------------------
 if section_principale == "🎬 Studio de Montage":
     st.title("🎬 Studio TikTok - Web & Mobile")
@@ -148,7 +146,7 @@ if section_principale == "🎬 Studio de Montage":
     )
 
     if not os.path.exists(chemin_abonnez_vous):
-        st.info("💡 Astuce : Pense à placer ton fichier `abonnez_vous.mp4` (la vidéo de 2 secondes) dans le dossier du projet pour qu'il s'ajoute automatiquement aux vidéos de moins d'une minute.")
+        st.info("💡 Astuce : Pense à placer ton fichier `abonnez_vous.mp4` dans le dossier du projet pour qu'il s'ajoute automatiquement aux vidéos de moins d'une minute.")
 
     st.subheader("1. Sélectionne tes vidéos brutes")
     uploaded_files = st.file_uploader("Glisse ou sélectionne tes vidéos brutes (.mp4)", type=["mp4"], accept_multiple_files=True)
@@ -289,13 +287,23 @@ if section_principale == "🎬 Studio de Montage":
                     logo = positionner_clip(logo_res, (20, 20))
                     video_finale = CompositeVideoClip([video_recadree, logo], size=video_recadree.size)
                 
-                # --- VÉRIFICATION DE LA DURÉE POUR AJOUT DE "ABONNEZ-VOUS" ---
+                # --- VÉRIFICATION & HARMONISATION DE LA DURÉE ET DU FORMAT ---
                 video_outro = None
                 if video_finale.duration < 60.0 and os.path.exists(chemin_abonnez_vous):
                     try:
                         video_outro = VideoFileClip(chemin_abonnez_vous)
-                        video_finale = concatenate_videoclips([video_finale, video_outro])
-                    except:
+                        # Redimensionnement de l'outro pour qu'elle épouse exactement la taille de la vidéo principale (anti-bug)
+                        if video_outro.size != video_finale.size:
+                            try:
+                                video_outro = video_outro.resized(video_finale.size)
+                            except AttributeError:
+                                try:
+                                    video_outro = video_outro.resize(video_finale.size)
+                                except:
+                                    pass
+                        
+                        video_finale = concatenate_videoclips([video_finale, video_outro], method="compose")
+                    except Exception:
                         pass
 
                 temp_audio = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False).name
