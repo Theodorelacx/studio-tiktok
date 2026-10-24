@@ -65,7 +65,6 @@ def couper_video(video, debut, fin):
 
 def redimensionner_image_clip(clip, width=None, height=None):
     try:
-        # On ne passe qu'un seul paramètre pour verrouiller le ratio d'origine
         if width and not height:
             return clip.resized(width=width)
         elif height and not width:
@@ -199,7 +198,8 @@ if section_principale == "🎬 Studio de Montage":
             frame_apercu = frame_rgb.copy()
             cv2.circle(frame_apercu, (st.session_state.centre_x, st.session_state.centre_y), rayon, (0, 255, 0), 4)
             cv2.circle(frame_apercu, (st.session_state.centre_x, st.session_state.centre_y), 8, (255, 0, 0), -1)
-            st.image(Image.fromarray(frame_apercu), caption=f"Aperçu du Centre : X={st.session_state.centre_x}, Y={st.session_state.centre_y}", use_column_width=True)
+            # CORRECTION ICI : Remplacement de use_column_width par use_container_width
+            st.image(Image.fromarray(frame_apercu), caption=f"Aperçu du Centre : X={st.session_state.centre_x}, Y={st.session_state.centre_y}", use_container_width=True)
 
             with open(chemin_config, "w") as f:
                 f.write(f"{st.session_state.centre_x},{st.session_state.centre_y}")
