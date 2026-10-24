@@ -56,7 +56,7 @@ def sauvegarder_liens(liste_liens):
     with open(chemin_liens, "w", encoding="utf-8") as f:
         json.dump(liste_liens, f, ensure_ascii=False, indent=4)
 
-# Fonctions utilitaires MoviePy (Corrigées et sécurisées)
+# Fonctions utilitaires MoviePy (Corrigées anti-déformation)
 def couper_video(video, debut, fin):
     try:
         return video.subclipped(debut, fin) if fin > 0 else video
@@ -65,10 +65,21 @@ def couper_video(video, debut, fin):
 
 def redimensionner_image_clip(clip, width=None, height=None):
     try:
-        return clip.resized(width=width, height=height)
+        # On ne passe qu'un seul paramètre pour verrouiller le ratio d'origine
+        if width and not height:
+            return clip.resized(width=width)
+        elif height and not width:
+            return clip.resized(height=height)
+        else:
+            return clip.resized(width=width, height=height)
     except (AttributeError, TypeError):
         try:
-            return clip.resize(width=width, height=height, apply_to=['mask'])
+            if width and not height:
+                return clip.resize(width=width, apply_to=['mask'])
+            elif height and not width:
+                return clip.resize(height=height, apply_to=['mask'])
+            else:
+                return clip.resize(width=width, height=height, apply_to=['mask'])
         except:
             return clip.resize(width=width, height=height)
 
@@ -292,7 +303,6 @@ if section_principale == "🎬 Studio de Montage":
                 if video_finale.duration < 60.0 and os.path.exists(chemin_abonnez_vous):
                     try:
                         video_outro = VideoFileClip(chemin_abonnez_vous)
-                        # Redimensionnement de l'outro pour qu'elle épouse exactement la taille de la vidéo principale (anti-bug)
                         if video_outro.size != video_finale.size:
                             try:
                                 video_outro = video_outro.resized(video_finale.size)
